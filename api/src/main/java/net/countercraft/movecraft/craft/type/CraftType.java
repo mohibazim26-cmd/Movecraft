@@ -159,6 +159,7 @@ final public class CraftType {
     public static final NamespacedKey USE_GRAVITY = buildKey("use_gravity");
     public static final NamespacedKey USE_INCLINE = buildKey("use_incline");
     public static final NamespacedKey HOVER_LIMIT = buildKey("hover_limit");
+    public static final NamespacedKey HOVER_CHECK_LIMIT = buildKey("hover_check_limit");
     public static final NamespacedKey HARVEST_BLOCKS = buildKey("harvest_blocks");
     public static final NamespacedKey HARVESTER_BLADE_BLOCKS = buildKey("harvester_blade_blocks");
     public static final NamespacedKey PASSTHROUGH_BLOCKS = buildKey("passthrough_blocks");
@@ -502,6 +503,7 @@ final public class CraftType {
         registerProperty(new BooleanProperty("useGravity", USE_GRAVITY, type -> false));
         registerProperty(new BooleanProperty("useIncline", USE_INCLINE, type -> false));
         registerProperty(new IntegerProperty("hoverLimit", HOVER_LIMIT, type -> 0));
+        registerProperty(new IntegerProperty("hoverCheckLimit", HOVER_CHECK_LIMIT, type -> 1));
         registerProperty(new MaterialSetProperty("harvestBlocks", HARVEST_BLOCKS,
                 type -> EnumSet.noneOf(Material.class)));
         registerProperty(new MaterialSetProperty("harvesterBladeBlocks", HARVESTER_BLADE_BLOCKS,
@@ -713,6 +715,10 @@ final public class CraftType {
         registerTypeValidator(
                 type -> type.getIntProperty(HOVER_LIMIT) >= 0,
                 "hoverLimit must be greater than or equal to zero"
+        );
+        registerTypeValidator(
+                type -> type.getIntProperty(HOVER_CHECK_LIMIT) > 0,
+                "hoverCheckLimit must be greater than zero"
         );
         registerTypeValidator(
                 type -> type.getIntProperty(GEAR_SHIFTS) >= 1,
