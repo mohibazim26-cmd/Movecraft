@@ -55,40 +55,36 @@ public final class InteractListener implements Listener {
             if(droppedMap.containsKey(e.getPlayer()) && System.currentTimeMillis() < droppedMap.get(e.getPlayer()))
                 return;
             if (e.getItem() != null && e.getItem().getType() == Settings.PilotTool) {
-                PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
+                final PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
                 if (craft != null) {
-                    if (!craft.getPilotLocked()) {
-                        if (e.getPlayer().hasPermission("movecraft." + craft.getType().getStringProperty(CraftType.NAME) + ".move")
-                                && craft.getType().getBoolProperty(CraftType.CAN_DIRECT_CONTROL)) {
-                            craft.setPilotLocked(true);
-                            Movecraft.getInstance().getDirectControlManager().addControlledCraft(craft, e.getPlayer());
-                            Movecraft.getInstance().getDirectControlManager().addOrSetCooldown(craft, System.currentTimeMillis() + 500);
-
-                            /*
-                            craft.setPilotLockedX(craft.getHitBox().getMidPoint().getX() - e.getPlayer().getLocation().getBlockX() + 0.5);
-                            craft.setPilotLockedY(craft.getHitBox().getMidPoint().getY() - e.getPlayer().getLocation().getY());
-                            craft.setPilotLockedZ(craft.getHitBox().getMidPoint().getZ() - e.getPlayer().getLocation().getBlockZ() + 0.5);
-                             */
-
-                            craft.setPilotLockedX(e.getPlayer().getLocation().getBlockX() + 0.5);
-                            craft.setPilotLockedY(e.getPlayer().getLocation().getY());
-                            craft.setPilotLockedZ(e.getPlayer().getLocation().getBlockZ() + 0.5);
-                            e.getPlayer().sendMessage(String
-                                    .format(I18nSupport.getInternationalisedString("Entering Direct Control Mode")));
-                            e.setCancelled(true);
+                    final Player player = e.getPlayer();
+                    e.setCancelled(true);
+                    // Delay activation by 2 ticks so a concurrent compass-drop (rotation) can
+                    // populate droppedMap first. Without this, LEFT_CLICK may fire before the
+                    // drop event and trigger direct control even though the player intended to rotate.
+                    Bukkit.getScheduler().runTaskLater(Movecraft.getInstance(), () -> {
+                        if (droppedMap.containsKey(player) && System.currentTimeMillis() < droppedMap.get(player))
                             return;
+                        if (!craft.getPilotLocked()) {
+                            if (player.hasPermission("movecraft." + craft.getType().getStringProperty(CraftType.NAME) + ".move")
+                                    && craft.getType().getBoolProperty(CraftType.CAN_DIRECT_CONTROL)) {
+                                craft.setPilotLocked(true);
+                                Movecraft.getInstance().getDirectControlManager().addControlledCraft(craft, player);
+                                Movecraft.getInstance().getDirectControlManager().addOrSetCooldown(craft, System.currentTimeMillis() + 500);
+                                craft.setPilotLockedX(player.getLocation().getBlockX() + 0.5);
+                                craft.setPilotLockedY(player.getLocation().getY());
+                                craft.setPilotLockedZ(player.getLocation().getBlockZ() + 0.5);
+                                player.sendMessage(String.format(I18nSupport.getInternationalisedString("Entering Direct Control Mode")));
+                            } else {
+                                player.sendMessage(String.format(I18nSupport.getInternationalisedString("Insufficient Permissions")));
+                            }
                         } else {
-                            e.getPlayer().sendMessage(
-                                    String.format(I18nSupport.getInternationalisedString("Insufficient Permissions")));
+                            craft.setPilotLocked(false);
+                            Movecraft.getInstance().getDirectControlManager().removeControlledCraft(craft);
+                            player.sendMessage(String.format(I18nSupport.getInternationalisedString("Leaving Direct Control Mode")));
                         }
-                    } else {
-                        craft.setPilotLocked(false);
-                        Movecraft.getInstance().getDirectControlManager().removeControlledCraft(craft);
-                        e.getPlayer().sendMessage(
-                                String.format(I18nSupport.getInternationalisedString("Leaving Direct Control Mode")));
-                        e.setCancelled(true);
-                        return;
-                    }
+                    }, 2L);
+                    return;
                 }
                 /*// Handle pilot tool left clicks
                 e.setCancelled(true);
@@ -214,7 +210,7 @@ public final class InteractListener implements Listener {
             if (craft == null)
                 return;
 
-            droppedMap.put(e.getPlayer(), System.currentTimeMillis() + 15);
+            droppedMap.put(e.getPlayer(), System.currentTimeMillis() + 1200);
 
             MovecraftRotation rotation;
             rotation = MovecraftRotation.ANTICLOCKWISE;
