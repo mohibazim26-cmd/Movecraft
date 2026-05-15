@@ -112,7 +112,6 @@ public class RotationTask extends AsyncTask {
             MovecraftLocation newLocation = MathUtils.rotateVec(rotation,originalLocation.subtract(originPoint)).add(originPoint);
             newHitBox.add(newLocation);
 
-            Material oldMaterial = originalLocation.toBukkit(w).getBlock().getType();
             if (!withinWorldBorder(craft.getWorld(), newLocation)) {
                 failMessage = I18nSupport.getInternationalisedString("Rotation - Failed Craft cannot pass world border") + String.format(" @ %d,%d,%d", newLocation.getX(), newLocation.getY(), newLocation.getZ());
                 failed = true;
