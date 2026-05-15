@@ -21,6 +21,7 @@ import net.countercraft.movecraft.MovecraftLocation;
 import net.countercraft.movecraft.config.Settings;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
+import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
 import net.countercraft.movecraft.events.CraftReleaseEvent;
 import net.countercraft.movecraft.localisation.I18nSupport;
@@ -118,6 +119,10 @@ public class PlayerListener implements Listener {
         final Craft c = CraftManager.getInstance().getCraftByPlayer(p);
 
         if (c == null) {
+            return;
+        }
+
+        if (c instanceof PlayerCraft && ((PlayerCraft) c).getPilotLocked()) {
             return;
         }
 

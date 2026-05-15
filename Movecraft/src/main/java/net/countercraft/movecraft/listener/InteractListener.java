@@ -137,13 +137,13 @@ public final class InteractListener implements Listener {
             if (e.getItem() == null || e.getItem().getType() != Settings.PilotTool)
                 return;
 
-            // Handle pilot tool right clicks
-            e.setCancelled(true);
-
             Player p = e.getPlayer();
             PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(p);
             if (craft == null)
                 return;
+
+            // Handle pilot tool right clicks
+            e.setCancelled(true);
 
             CraftType type = craft.getType();
             int currentGear = craft.getCurrentGear();

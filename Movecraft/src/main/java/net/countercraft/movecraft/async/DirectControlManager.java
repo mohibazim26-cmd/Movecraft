@@ -1,60 +1,107 @@
 package net.countercraft.movecraft.async;
 
 import net.countercraft.movecraft.CruiseDirection;
-import net.countercraft.movecraft.Movecraft;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Craft, Player> controlledCrafts = new HashMap<>();
     private final Map<Craft, Long> cooldowns = new HashMap<>();
     private final Map<Player, Long> sneakTimes = new HashMap<>();
+    private final Map<Player, double[]> pendingMovements = new HashMap<>();
+    private final Map<Player, double[]> lastInput = new HashMap<>();
+    private final Map<Player, Long> lastInputTime = new HashMap<>();
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onPlayerMove(PlayerMoveEvent event) {
+        Player p = event.getPlayer();
+        PlayerCraft pCraft = null;
+        for (Map.Entry<Craft, Player> entry : controlledCrafts.entrySet()) {
+            if (p.equals(entry.getValue())) {
+                pCraft = (PlayerCraft) entry.getKey();
+                break;
+            }
+        }
+        if (pCraft == null) return;
+
+        Location to = event.getTo();
+        pendingMovements.put(p, new double[]{
+            to.getX() - pCraft.getPilotLockedX(),
+            to.getY() - pCraft.getPilotLockedY(),
+            to.getZ() - pCraft.getPilotLockedZ()
+        });
+
+        // Lock position but allow head rotation
+        event.setTo(new Location(to.getWorld(),
+            pCraft.getPilotLockedX(), pCraft.getPilotLockedY(), pCraft.getPilotLockedZ(),
+            to.getYaw(), to.getPitch()));
+    }
+
     @Override
     public void run() {
         if (controlledCrafts.isEmpty()) return;
-        Bukkit.getLogger().info(controlledCrafts.toString());
+        List<Craft> toRemove = new ArrayList<>();
         for (Map.Entry<Craft, Player> controlledCraft : controlledCrafts.entrySet())
         {
-            if(controlledCraft.getKey() == null || controlledCraft.getValue() == null)
-                controlledCrafts.remove(controlledCraft.getKey());
+            if(controlledCraft.getKey() == null || controlledCraft.getValue() == null) {
+                toRemove.add(controlledCraft.getKey());
+                continue;
+            }
             Player player = controlledCraft.getValue();
             PlayerCraft pCraft = (PlayerCraft)controlledCraft.getKey();
 
-            World world = pCraft.getWorld();
-
-            Location pilotLockLocation = new Location(world, pCraft.getPilotLockedX(), pCraft.getPilotLockedY(), pCraft.getPilotLockedZ(), player.getYaw(), player.getPitch());
-
-            double movedX = player.getLocation().getX() - pCraft.getPilotLockedX();
-            double movedY = player.getLocation().getY() - pCraft.getPilotLockedY();
-            double movedZ = player.getLocation().getZ() - pCraft.getPilotLockedZ();
-
-            Movecraft.getInstance().getSmoothTeleport().teleport(controlledCraft.getValue(), pilotLockLocation);
+            double[] delta = pendingMovements.remove(player);
+            double movedX, movedY, movedZ;
+            if (delta != null && (Math.abs(delta[0]) > 0.05 || Math.abs(delta[1]) > 0.05 || Math.abs(delta[2]) > 0.05)) {
+                movedX = delta[0];
+                movedY = delta[1];
+                movedZ = delta[2];
+                lastInput.put(player, delta);
+                lastInputTime.put(player, System.currentTimeMillis());
+            } else {
+                Long t = lastInputTime.get(player);
+                double[] last = lastInput.get(player);
+                if (last != null && t != null && System.currentTimeMillis() - t < 150) {
+                    movedX = last[0];
+                    movedY = last[1];
+                    movedZ = last[2];
+                } else {
+                    movedX = 0;
+                    movedY = 0;
+                    movedZ = 0;
+                    lastInput.remove(player);
+                    lastInputTime.remove(player);
+                }
+            }
 
             if(cooldowns.containsKey(pCraft))
             {
-                if(cooldowns.get(pCraft) > System.currentTimeMillis()) return;
+                if(cooldowns.get(pCraft) > System.currentTimeMillis()) continue;
                 else cooldowns.remove(pCraft);
             }
             CruiseDirection xDir = CruiseDirection.NONE;
             CruiseDirection zDir = CruiseDirection.NONE;
 
-            if (movedX > 0.15)
+            if (movedX > 0.05)
                 xDir = CruiseDirection.EAST;
-            else if (movedX < -0.15)
+            else if (movedX < -0.05)
                 xDir = CruiseDirection.WEST;
-            if (movedZ > 0.15)
+            if (movedZ > 0.05)
                 zDir = CruiseDirection.SOUTH;
-            else if (movedZ < -0.15)
+            else if (movedZ < -0.05)
                 zDir = CruiseDirection.NORTH;
 
             if(Math.abs(movedX) > 0 && !pCraft.getCruising()|| Math.abs(movedZ) > 0 && !pCraft.getCruising() || movedY > 0 && !pCraft.getCruising())
@@ -99,11 +146,19 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             if (cd != pCraft.getCruiseDirection())
                 pCraft.setCruiseDirection(cd);
         }
+        toRemove.forEach(controlledCrafts::remove);
     }
 
     public void addControlledCraft(Craft c, Player p) { controlledCrafts.put(c, p); }
 
-    public void removeControlledCraft(Craft c) { controlledCrafts.remove(c); }
+    public void removeControlledCraft(Craft c) {
+        Player p = controlledCrafts.remove(c);
+        if (p != null) {
+            pendingMovements.remove(p);
+            lastInput.remove(p);
+            lastInputTime.remove(p);
+        }
+    }
 
     public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
 }

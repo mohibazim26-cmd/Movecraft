@@ -194,6 +194,7 @@ public class Movecraft extends JavaPlugin {
 
         directControlManager = new DirectControlManager();
         directControlManager.runTaskTimer(this, 0, 1);
+        getServer().getPluginManager().registerEvents(directControlManager, this);
 
         MapUpdateManager.getInstance().runTaskTimer(this, 0, 1);
 
