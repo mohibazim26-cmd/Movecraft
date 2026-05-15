@@ -96,6 +96,7 @@ public class BlockListener implements Listener {
     // prevent items from dropping from moving crafts
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onItemSpawn(@NotNull ItemSpawnEvent e) {
+        if (CraftManager.getInstance().getCrafts().isEmpty()) return;
         Location location = e.getLocation();
         MovecraftLocation loc = MathUtils.bukkit2MovecraftLoc(location);
         for (Craft craft : MathUtils.craftsNearLocFast(CraftManager.getInstance().getCrafts(), location)) {
@@ -179,6 +180,7 @@ public class BlockListener implements Listener {
     // prevent fragile items from dropping on cruising crafts
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPhysics(@NotNull BlockPhysicsEvent e) {
+        if (CraftManager.getInstance().getCrafts().isEmpty()) return;
         Block block = e.getBlock();
         if (!Tags.FRAGILE_MATERIALS.contains(block.getType()))
             return;
@@ -218,6 +220,7 @@ public class BlockListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onFlow(@NotNull BlockFromToEvent e) {
+        if (CraftManager.getInstance().getCrafts().isEmpty()) return;
         if (Settings.DisableSpillProtection)
             return;
         Block block = e.getBlock();

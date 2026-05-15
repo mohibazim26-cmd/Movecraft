@@ -9,7 +9,9 @@ import net.countercraft.movecraft.events.CraftPilotEvent;
 import net.countercraft.movecraft.events.CraftReleaseEvent;
 import net.countercraft.movecraft.util.hitboxes.HitBox;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Tag;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -29,14 +31,12 @@ public class CraftPilotListener implements Listener {
         // Now, find all signs on the craft...
         for (MovecraftLocation mLoc : craft.getHitBox()) {
             Block block = mLoc.toBukkit(craft.getWorld()).getBlock();
-            // Only interested in signs, if no sign => continue
-            // TODO: Just limit to signs?
-            // Edit: That's useful for dispensers too to flag TNT and the like, but for that one could use a separate listener
-            if (!(block.getState() instanceof Sign))
+            if (!Tag.SIGNS.isTagged(block.getType()))
                 continue;
-            // Sign located!
-            Sign tile = (Sign) block.getState();
-
+            BlockState state = block.getState();
+            if (!(state instanceof Sign))
+                continue;
+            Sign tile = (Sign) state;
             craft.markTileStateWithUUID(tile);
             tile.update();
         }

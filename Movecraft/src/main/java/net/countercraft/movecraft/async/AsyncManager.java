@@ -17,7 +17,6 @@
 
 package net.countercraft.movecraft.async;
 
-import com.google.common.collect.Lists;
 import net.countercraft.movecraft.CruiseDirection;
 import net.countercraft.movecraft.Movecraft;
 import net.countercraft.movecraft.MovecraftLocation;
@@ -37,6 +36,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -185,13 +185,10 @@ public class AsyncManager extends BukkitRunnable {
                 if (pilot.getInventory().getHeldItemSlot() == 5)
                     bankRight = true;
             }
-            int tickCoolDown;
-            if (cooldownCache.containsKey(craft)) {
-                tickCoolDown = cooldownCache.get(craft);
-            }
-            else {
+            int tickCoolDown = cooldownCache.getOrDefault(craft, -1);
+            if (tickCoolDown == -1) {
                 tickCoolDown = craft.getTickCooldown();
-                cooldownCache.put(craft,tickCoolDown);
+                cooldownCache.put(craft, tickCoolDown);
             }
 
             // Account for banking and diving in speed calculations by changing the tickCoolDown
@@ -313,10 +310,11 @@ public class AsyncManager extends BukkitRunnable {
     //Controls sinking crafts
     private void processSinking() {
         //copy the crafts before iteration to prevent concurrent modifications
-        List<Craft> crafts = Lists.newArrayList(CraftManager.getInstance());
+        List<Craft> crafts = new ArrayList<>();
+        for (Craft craft : CraftManager.getInstance()) {
+            if (craft instanceof SinkingCraft) crafts.add(craft);
+        }
         for (Craft craft : crafts) {
-            if (!(craft instanceof SinkingCraft))
-                continue;
 
             if (craft.getHitBox().isEmpty() || craft.getHitBox().getMinY() < (craft.getWorld().getMinHeight() +5 )) {
                 CraftManager.getInstance().release(craft, CraftReleaseEvent.Reason.SUNK, false);
@@ -346,18 +344,22 @@ public class AsyncManager extends BukkitRunnable {
 
         // now cleanup craft that are bugged and have not moved in the past 60 seconds,
         //  but have no pilot or are still processing
+        List<Craft> toRelease = new ArrayList<>();
+        long now = System.currentTimeMillis();
         for (Craft craft : CraftManager.getInstance()) {
             if (!(craft instanceof PilotedCraft)) {
-                if (craft.getLastCruiseUpdate() < System.currentTimeMillis() - 60000)
-                    CraftManager.getInstance().release(craft, CraftReleaseEvent.Reason.INACTIVE, true);
+                if (craft.getLastCruiseUpdate() < now - 60000)
+                    toRelease.add(craft);
             }
             if (!craft.isNotProcessing()) {
                 if (craft.getCruising()) {
-                    if (craft.getLastCruiseUpdate() < System.currentTimeMillis() - 5000)
+                    if (craft.getLastCruiseUpdate() < now - 5000)
                         craft.setProcessing(false);
                 }
             }
         }
+        for (Craft craft : toRelease)
+            CraftManager.getInstance().release(craft, CraftReleaseEvent.Reason.INACTIVE, true);
     }
 
     private void clear(Craft c) {

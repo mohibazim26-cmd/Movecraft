@@ -76,6 +76,13 @@ public class ContactsManager extends BukkitRunnable implements Listener {
     }
 
     private @NotNull List<Craft> get(Craft base, @NotNull Set<Craft> craftsInWorld) {
+        MovecraftLocation baseCenter;
+        try {
+            baseCenter = base.getHitBox().getMidPoint();
+        } catch (EmptyHitBoxException e) {
+            return new ArrayList<>(0);
+        }
+
         Map<Craft, Integer> inRangeDistanceSquared = new HashMap<>();
         for (Craft target : craftsInWorld) {
             if (target instanceof SubCraft)
@@ -84,10 +91,8 @@ public class ContactsManager extends BukkitRunnable implements Listener {
                     && ((PilotedCraft) base).getPilot() == ((PilotedCraft) target).getPilot())
                 continue;
 
-            MovecraftLocation baseCenter;
             MovecraftLocation targetCenter;
             try {
-                baseCenter = base.getHitBox().getMidPoint();
                 targetCenter = target.getHitBox().getMidPoint();
             }
             catch (EmptyHitBoxException e) {
@@ -237,18 +242,13 @@ public class ContactsManager extends BukkitRunnable implements Listener {
     private void remove(Craft base) {
         for (Craft other : CraftManager.getInstance().getCrafts()) {
             List<Craft> contacts = other.getDataTag(Craft.CONTACTS);
-            if (contacts.contains(base))
+            if (!contacts.contains(base))
                 continue;
 
             contacts.remove(base);
             other.setDataTag(Craft.CONTACTS, contacts);
-        }
 
-        for (Craft other : CraftManager.getInstance().getCrafts()) {
             Map<Craft, Long> recentContacts = other.getDataTag(RECENT_CONTACTS);
-            if (!recentContacts.containsKey(other))
-                continue;
-
             recentContacts.remove(base);
             other.setDataTag(RECENT_CONTACTS, recentContacts);
         }

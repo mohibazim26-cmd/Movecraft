@@ -19,6 +19,7 @@ import java.util.Map;
 
 public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Craft, Player> controlledCrafts = new HashMap<>();
+    private final Map<Player, PlayerCraft> playerToCraft = new HashMap<>();
     private final Map<Craft, Long> cooldowns = new HashMap<>();
     private final Map<Player, Long> sneakTimes = new HashMap<>();
     private final Map<Player, double[]> pendingMovements = new HashMap<>();
@@ -28,13 +29,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerMove(PlayerMoveEvent event) {
         Player p = event.getPlayer();
-        PlayerCraft pCraft = null;
-        for (Map.Entry<Craft, Player> entry : controlledCrafts.entrySet()) {
-            if (p.equals(entry.getValue())) {
-                pCraft = (PlayerCraft) entry.getKey();
-                break;
-            }
-        }
+        PlayerCraft pCraft = playerToCraft.get(p);
         if (pCraft == null) return;
 
         Location to = event.getTo();
@@ -149,11 +144,15 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         toRemove.forEach(controlledCrafts::remove);
     }
 
-    public void addControlledCraft(Craft c, Player p) { controlledCrafts.put(c, p); }
+    public void addControlledCraft(Craft c, Player p) {
+        controlledCrafts.put(c, p);
+        playerToCraft.put(p, (PlayerCraft) c);
+    }
 
     public void removeControlledCraft(Craft c) {
         Player p = controlledCrafts.remove(c);
         if (p != null) {
+            playerToCraft.remove(p);
             pendingMovements.remove(p);
             lastInput.remove(p);
             lastInputTime.remove(p);

@@ -99,9 +99,10 @@ public class CraftTranslateCommand extends UpdateCommand {
             final Set<MovecraftLocation> to = Sets.difference(craft.getHitBox().asSet(), originalLocations.asSet());
             //place phased blocks
             for (MovecraftLocation location : to) {
-                var data = location.toBukkit(world).getBlock().getBlockData();
+                Location bukkitLoc = location.toBukkit(world);
+                var data = bukkitLoc.getBlock().getBlockData();
                 if (passthroughBlocks.contains(data.getMaterial())) {
-                    craft.getPhaseBlocks().put(location.toBukkit(world), data);
+                    craft.getPhaseBlocks().put(bukkitLoc, data);
                 }
             }
             //The subtraction of the set of coordinates in the HitBox cube and the HitBox itself
@@ -339,12 +340,8 @@ public class CraftTranslateCommand extends UpdateCommand {
             // TODO: This is implemented only to fix client caching
             //  ideally we wouldn't do the update and would instead fake it out to the player
             for(MovecraftLocation location : entry.getValue()){
-                Block block = location.toBukkit(craft.getWorld()).getBlock();
-                BlockState state = block.getState();
-                if (!(state instanceof Sign)) {
-                    continue;
-                }
                 Sign sign = signStates.get(location);
+                if (sign == null) continue;
                 for(int i = 0; i<4; i++){
                     sign.setLine(i, entry.getKey()[i]);
                 }
