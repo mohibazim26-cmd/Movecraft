@@ -178,12 +178,16 @@ public class AsyncManager extends BukkitRunnable {
             boolean dive = false;
             if (craft instanceof PlayerCraft && ((PlayerCraft) craft).getPilotLocked()) {
                 Player pilot = ((PlayerCraft) craft).getPilot();
-                if (pilot.isSneaking())
-                    dive = true;
-                if (pilot.getInventory().getHeldItemSlot() == 3)
-                    bankLeft = true;
-                if (pilot.getInventory().getHeldItemSlot() == 5)
-                    bankRight = true;
+                if (pilot != null) {
+                    if (pilot.isSneaking())
+                        dive = true;
+                    if (pilot.getInventory().getHeldItemSlot() == 3)
+                        bankLeft = true;
+                    if (pilot.getInventory().getHeldItemSlot() == 5)
+                        bankRight = true;
+                } else {
+                    Movecraft.getInstance().getLogger().warning("[AsyncManager] pilotLocked craft has null pilot! craft=" + craft.getType().getStringProperty(net.countercraft.movecraft.craft.type.CraftType.NAME));
+                }
             }
             int tickCoolDown = cooldownCache.getOrDefault(craft, -1);
             if (tickCoolDown == -1) {
