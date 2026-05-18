@@ -84,9 +84,10 @@ public class IWorldHandler extends WorldHandler {
         List<TickHolder> ticks = new ArrayList<>();
         //get the tiles
         for (BlockPos position : rotatedPositions.keySet()) {
+            BlockState tileBlockState = nativeWorld.getBlockState(position).rotate(ROTATION[rotation.ordinal()]);
             BlockEntity tile = removeBlockEntity(nativeWorld, position);
             if (tile != null)
-                tiles.add(new TileHolder(tile, position));
+                tiles.add(new TileHolder(tile, position, tileBlockState));
 
             //get the nextTick to move with the tile
             ScheduledTick tickHere = tickProvider.getNextTick(nativeWorld, position);
@@ -119,8 +120,11 @@ public class IWorldHandler extends WorldHandler {
         //*    Step four: replace all the tiles     *
         //*******************************************
         //TODO: go by chunks
-        for (TileHolder tileHolder : tiles)
-            moveBlockEntity(nativeWorld, rotatedPositions.get(tileHolder.getTilePosition()), tileHolder.getTile());
+        for (TileHolder tileHolder : tiles) {
+            BlockPos newPos = rotatedPositions.get(tileHolder.getTilePosition());
+            setBlockFast(nativeWorld, newPos, tileHolder.getBlockState());
+            moveBlockEntity(nativeWorld, newPos, tileHolder.getTile());
+        }
         for (TickHolder tickHolder : ticks) {
             final long currentTime = nativeWorld.serverLevelData.getGameTime();
             nativeWorld.getBlockTicks().schedule(new ScheduledTick<>(
@@ -164,9 +168,10 @@ public class IWorldHandler extends WorldHandler {
             if (oldNativeWorld.getBlockState(position) == Blocks.AIR.defaultBlockState())
                 continue;
 
+            BlockState tileBlockState = oldNativeWorld.getBlockState(position);
             BlockEntity tile = removeBlockEntity(oldNativeWorld, position);
             if (tile != null)
-                tiles.add(new TileHolder(tile,position));
+                tiles.add(new TileHolder(tile, position, tileBlockState));
 
             //get the nextTick to move with the tile
             ScheduledTick tickHere = tickProvider.getNextTick(nativeWorld, position);
@@ -202,8 +207,11 @@ public class IWorldHandler extends WorldHandler {
         //*    Step four: replace all the tiles     *
         //*******************************************
         //TODO: go by chunks
-        for (TileHolder tileHolder : tiles)
-            moveBlockEntity(nativeWorld, tileHolder.getTilePosition().offset(translateVector), tileHolder.getTile());
+        for (TileHolder tileHolder : tiles) {
+            BlockPos newPos = tileHolder.getTilePosition().offset(translateVector);
+            setBlockFast(nativeWorld, newPos, tileHolder.getBlockState());
+            moveBlockEntity(nativeWorld, newPos, tileHolder.getTile());
+        }
         for (TickHolder tickHolder : ticks) {
             final long currentTime = nativeWorld.getGameTime();
             nativeWorld.getBlockTicks().schedule(new ScheduledTick<>((Block) tickHolder.getTick().type(), tickHolder.getTickPosition().offset(translateVector), tickHolder.getTick().triggerTick() - currentTime, tickHolder.getTick().priority(), tickHolder.getTick().subTickOrder()));
@@ -311,12 +319,14 @@ public class IWorldHandler extends WorldHandler {
         private final BlockEntity tile;
         @NotNull
         private final BlockPos tilePosition;
+        @NotNull
+        private final BlockState blockState;
 
-        public TileHolder(@NotNull BlockEntity tile, @NotNull BlockPos tilePosition) {
+        public TileHolder(@NotNull BlockEntity tile, @NotNull BlockPos tilePosition, @NotNull BlockState blockState) {
             this.tile = tile;
             this.tilePosition = tilePosition;
+            this.blockState = blockState;
         }
-
 
         @NotNull
         public BlockEntity getTile() {
@@ -326,6 +336,11 @@ public class IWorldHandler extends WorldHandler {
         @NotNull
         public BlockPos getTilePosition() {
             return tilePosition;
+        }
+
+        @NotNull
+        public BlockState getBlockState() {
+            return blockState;
         }
     }
 

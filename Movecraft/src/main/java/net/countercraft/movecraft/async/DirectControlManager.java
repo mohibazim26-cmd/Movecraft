@@ -1,7 +1,6 @@
 package net.countercraft.movecraft.async;
 
 import net.countercraft.movecraft.CruiseDirection;
-import net.countercraft.movecraft.Movecraft;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
@@ -53,7 +52,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     @Override
     public void run() {
         if (controlledCrafts.isEmpty()) return;
-        Movecraft.getInstance().getLogger().info("[DCM] run() tick — controlled crafts: " + controlledCrafts.size() + ", playerToCraft: " + playerToCraft.size());
         List<Craft> toRemove = new ArrayList<>();
         for (Map.Entry<Craft, Player> controlledCraft : controlledCrafts.entrySet())
         {
@@ -151,10 +149,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     public void addControlledCraft(Craft c, Player p) {
-        Movecraft.getInstance().getLogger().info("[DCM] addControlledCraft: " + p.getName() + " -> craft@" + System.identityHashCode(c) + " | controlledCrafts before: " + controlledCrafts.size());
         Player oldPlayer = controlledCrafts.put(c, p);
         if (oldPlayer != null && !oldPlayer.equals(p)) {
-            Movecraft.getInstance().getLogger().warning("[DCM] Craft already had player " + oldPlayer.getName() + " — cleaning up stale entry");
             playerToCraft.remove(oldPlayer);
             pendingMovements.remove(oldPlayer);
             lastInput.remove(oldPlayer);
@@ -162,11 +158,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             sneakTimes.remove(oldPlayer);
         }
         playerToCraft.put(p, (PlayerCraft) c);
-        Movecraft.getInstance().getLogger().info("[DCM] addControlledCraft done | controlledCrafts: " + controlledCrafts.size() + ", playerToCraft: " + playerToCraft.size());
     }
 
     public void removeControlledCraft(Craft c) {
-        Movecraft.getInstance().getLogger().info("[DCM] removeControlledCraft: craft@" + System.identityHashCode(c) + " | controlledCrafts before: " + controlledCrafts.size());
         Player p = controlledCrafts.remove(c);
         if (p != null) {
             playerToCraft.remove(p);
@@ -174,9 +168,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             lastInput.remove(p);
             lastInputTime.remove(p);
             sneakTimes.remove(p);
-            Movecraft.getInstance().getLogger().info("[DCM] removeControlledCraft: removed " + p.getName() + " | controlledCrafts: " + controlledCrafts.size());
-        } else {
-            Movecraft.getInstance().getLogger().warning("[DCM] removeControlledCraft: craft not found in controlledCrafts");
         }
     }
 
