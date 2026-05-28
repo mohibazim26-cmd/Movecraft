@@ -294,7 +294,17 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     private void updateCraftGearFromSlot(Player player, PlayerCraft pCraft, int slot) {
-        int maxGears = pCraft.getType().getIntProperty(CraftType.GEAR_SHIFTS);
+        // Legge le impostazioni in modo sicuro dai passthroughProperties di Movecraft
+        int maxGears = 5;
+        Object gearProp = pCraft.getType().getPassthroughProperty("gearShifts");
+        if (gearProp instanceof Number) {
+            maxGears = ((Number) gearProp).intValue();
+        } else if (gearProp instanceof String) {
+            try {
+                maxGears = Integer.parseInt((String) gearProp);
+            } catch (NumberFormatException ignored) {}
+        }
+
         if (maxGears <= 1) return;
 
         int targetGear = 1 + (int) Math.round(((double) slot / 8.0) * (maxGears - 1));
@@ -304,7 +314,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
         pCraft.setCurrentGear(targetGear);
 
-        // Invio Action Bar compatibile al 100% con Paper/Adventure nativo del plugin
         Component message;
         if (targetGear == maxGears) {
             message = Component.text("AFTERBURNERS ACTIVE [Gear " + targetGear + "/" + maxGears + "]", NamedTextColor.DARK_PURPLE);
