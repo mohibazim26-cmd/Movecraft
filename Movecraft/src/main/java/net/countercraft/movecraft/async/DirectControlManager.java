@@ -3,8 +3,8 @@ package net.countercraft.movecraft.async;
 import net.countercraft.movecraft.CruiseDirection;
 import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
-import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
+import net.countercraft.movecraft.events.CraftRotateEvent;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
@@ -13,6 +13,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.scheduler.BukkitRunnable;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,10 +27,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Player, double[]> pendingMovements = new HashMap<>();
     private final Map<Player, double[]> lastInput = new HashMap<>();
     private final Map<Player, Long> lastInputTime = new HashMap<>();
-    private final Map<Player, Long> lastRotateMs = new HashMap<>(); // Cooldown rotazione caccia
 
-    // Mappe di fallback interne per garantire la compilazione su qualsiasi fork
-    private final Map<Player, Integer> internalAircraftGears = new HashMap<>();
+    // Mappe di stato isolate per i caccia
     private final Map<Craft, Long> aircraftTickCooldown = new HashMap<>();
     private final Map<Player, Boolean> lastSneakState = new HashMap<>();
 
@@ -46,8 +45,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             to.getZ() - pCraft.getPilotLockedZ()
         });
 
-        // Lock position but allow head rotation. Zero vertical velocity to prevent
-        // gravity accumulation causing the player to clip through the block below them.
         Vector vel = p.getVelocity();
         p.setVelocity(new Vector(vel.getX(), 0, vel.getZ()));
         event.setTo(new Location(to.getWorld(),
@@ -99,7 +96,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             }
 
             // =========================================================================
-            // DEVIAZIONE COMBAT AIRCRAFT: Logica Sicura e Modello di Volo con Smoothing
+            // DEVIAZIONE COMBAT AIRCRAFT: Isolamento Totale
             // =========================================================================
             String craftType = pCraft.getType().getTemplateName().toLowerCase();
             if (craftType.equals("fighter") || craftType.equals("bomber")) {
@@ -165,8 +162,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             lastInput.remove(oldPlayer);
             lastInputTime.remove(oldPlayer);
             sneakTimes.remove(oldPlayer);
-            lastRotateMs.remove(oldPlayer);
-            internalAircraftGears.remove(oldPlayer);
             lastSneakState.remove(oldPlayer);
         }
         playerToCraft.put(p, (PlayerCraft) c);
@@ -180,8 +175,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             lastInput.remove(p);
             lastInputTime.remove(p);
             sneakTimes.remove(p);
-            lastRotateMs.remove(p);
-            internalAircraftGears.remove(p);
             lastSneakState.remove(p);
         }
     }
@@ -189,20 +182,18 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
 
     // =========================================================================
-    // MODELLO DI VOLO INTERNO CON SMOOTHING (ANTI-LAG & COMPATIBILE AL 100%)
+    // MODELLO DI VOLO REATTIVO (W-A-S-D TRIDIMENSIONALE RIGIDO)
     // =========================================================================
     private void processAircraftTick(Player player, PlayerCraft pCraft, double movedX, double movedZ) {
         boolean isSneaking = player.isSneaking();
         boolean wasSneaking = lastSneakState.getOrDefault(player, false);
         lastSneakState.put(player, isSneaking);
 
-        // Frenata dello Sneak (Frizione)
         if (isSneaking) {
             if (pCraft.getCruising()) pCraft.setCruising(false);
             return;
         }
 
-        // Wiki-Accurate: Al rilascio dello Sneak ricalcola ISTANTANEAMENTE la nuova rotta cardinale guardata
         if (!isSneaking && wasSneaking) {
             pCraft.setCruiseDirection(getAircraftCardinalDirection(player.getLocation().getYaw()));
             pCraft.setCruising(true);
@@ -213,22 +204,16 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             pCraft.setCruising(true);
         }
 
-        // --- SISTEMA DI SMOOTHING DELLA VELOCITÀ ---
-        int currentGear = internalAircraftGears.getOrDefault(player, 1);
         long now = System.currentTimeMillis();
         long lastTickMove = aircraftTickCooldown.getOrDefault(pCraft, 0L);
-
-        // Calcoliamo il delay in millisecondi in base alla marcia per evitare l'effetto missile
-        long requiredDelay = Math.max(50, 300 - (currentGear * 28)); 
-        if (now - lastTickMove < requiredDelay) {
-            return; // Salta questo tick, l'aereo si muove in modo fluido basandosi sul tempo
+        if (now - lastTickMove < 100L) { 
+            return; 
         }
         aircraftTickCooldown.put(pCraft, now);
 
         CruiseDirection baseDir = pCraft.getCruiseDirection();
         int dx = 0, dy = 0, dz = 0;
 
-        // Avanzamento costante del Cruise
         switch (baseDir) {
             case NORTH: dz = -1; break;
             case SOUTH: dz = 1; break;
@@ -237,7 +222,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             default: break;
         }
 
-        // Mappatura input locali WASD relativi
         boolean inputW = false, inputS = false, inputA = false, inputD = false;
         if (baseDir == CruiseDirection.NORTH) {
             if (movedZ < -0.05) inputW = true; if (movedZ > 0.05) inputS = true;
@@ -253,7 +237,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             if (movedZ > 0.05) inputA = true;  if (movedZ < -0.05) inputD = true;
         }
 
-        // Combinazione tridimensionale (W/S cambiano asse Y, A/D aggiungono strafe laterale)
         if (inputW) dy = -1;
         else if (inputS) dy = 1;
 
@@ -265,14 +248,17 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             if (baseDir == CruiseDirection.EAST)  dz = 1;  if (baseDir == CruiseDirection.WEST)  dz = -1;
         }
 
-        // Traduzione Sicura (Fallback Universale): usiamo l'API standard compatibile con ogni fork Movecraft
         if (dx != 0 || dy != 0 || dz != 0) {
             try {
-                // Tenta la traslazione nativa della HitBox (presente in tutte le versioni)
-                pCraft.move(dx, dy, dz); 
-            } catch (NoSuchMethodError e) {
-                // Fallback se il fork usa la vecchia nomenclatura del Movecraft originale
-                pCraft.translate(pCraft.getWorld(), dx, dy, dz);
+                Method moveMethod = pCraft.getClass().getMethod("move", int.class, int.class, int.class);
+                moveMethod.invoke(pCraft, dx, dy, dz);
+            } catch (Exception e1) {
+                try {
+                    Method translateMethod = pCraft.getClass().getMethod("translate", org.bukkit.World.class, int.class, int.class, int.class);
+                    translateMethod.invoke(pCraft, pCraft.getWorld(), dx, dy, dz);
+                } catch (Exception e2) {
+                    pCraft.setCruiseDirection(baseDir);
+                }
             }
         }
     }
@@ -288,7 +274,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     // =========================================================================
-    // THROTTLE SICURO E INTERNAZIONALIZZATO SULLA BUSSOLA
+    // INTERFACCIA VISIVA HOTBAR COMPASS
     // =========================================================================
     @org.bukkit.event.EventHandler
     public void onAircraftThrottle(org.bukkit.event.player.PlayerItemHeldEvent event) {
@@ -300,8 +286,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
 
         int newSlot = event.getNewSlot();
-
-        // 1. Inseguimento Bussola Hotbar
         int compassSlot = -1;
         for (int i = 0; i < 9; i++) {
             org.bukkit.inventory.ItemStack item = player.getInventory().getItem(i);
@@ -318,7 +302,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             player.getInventory().setItem(compassSlot, targetSlotItem);
         }
 
-        // 2. Modifica Meta Nome Sicura (Senza NBT sporchi)
         org.bukkit.inventory.ItemStack currentCompass = player.getInventory().getItem(newSlot);
         if (currentCompass != null && currentCompass.getType() == org.bukkit.Material.COMPASS) {
             org.bukkit.inventory.meta.ItemMeta meta = currentCompass.getItemMeta();
@@ -331,39 +314,33 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 currentCompass.setItemMeta(meta);
             }
         }
-
-        // Salviamo la marcia internamente (evitiamo crash API mancanti) e aggiorniamo il fork se possibile
-        int targetGear = newSlot + 1;
-        internalAircraftGears.put(player, targetGear);
-        try {
-            pCraft.setCurrentGear(targetGear);
-        } catch (NoSuchMethodError ignored) {} 
-
-        double fuelBurnRate = 0.5 + (((double) targetGear / 9.0) * 1.5);
-        pCraft.setFuelBurnMultiplier(fuelBurnRate);
     }
 
     // =========================================================================
-    // ROTAZIONE PUBBLICA CHIAMABILE DA INTERACTLISTENER NATIVO
+    // COERENZA TELECAMERA: Intercetta l'evento di rotazione e gira la testa al pilota
     // =========================================================================
-    public void executeAircraftRotation(Player player, PlayerCraft pCraft, MovecraftRotation rotation) {
-        long now = System.currentTimeMillis();
-        long lastRotate = lastRotateMs.getOrDefault(player, 0L);
-        if (now - lastRotate < 500L) return; 
-        lastRotateMs.put(player, now);
-
-        pCraft.rotate(rotation, pCraft.getHitBox().getMidPoint());
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCraftRotate(CraftRotateEvent event) {
+        Craft craft = event.getCraft();
+        if (!(craft instanceof PlayerCraft)) return;
         
+        PlayerCraft pCraft = (PlayerCraft) craft;
+        Player player = playerToCraft.get(pCraft);
+        if (player == null) return;
+
+        String craftType = pCraft.getType().getTemplateName().toLowerCase();
+        if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
+
         Location loc = player.getLocation();
         float currentYaw = loc.getYaw();
-        if (rotation == MovecraftRotation.CLOCKWISE) {
+        
+        if (event.getRotation() == MovecraftRotation.CLOCKWISE) {
             loc.setYaw(currentYaw + 90.0F);
         } else {
             loc.setYaw(currentYaw - 90.0F);
         }
+        
         player.teleport(loc);
-
-        // Sincronizza la rotta del volo continuo
         pCraft.setCruiseDirection(getAircraftCardinalDirection(loc.getYaw()));
     }
 }
