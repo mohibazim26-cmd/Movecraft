@@ -97,13 +97,13 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 else cooldowns.remove(pCraft);
             }
 
-            String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
-            if (craftType.equals("fighter") || craftType.equals("bomber")) {
+            String craftType = pCraft.getType().getStringProperty(CraftType.NAME);
+            if (craftType != null && craftType.equalsIgnoreCase("Fighter")) {
                 processAircraftTick(player, pCraft, movedX, movedZ);
                 continue; 
             }
 
-            // Logica di movimento standard per i veicoli terrestri e navali
+            // Movimento standard per gli altri veicoli
             CruiseDirection xDir = CruiseDirection.NONE;
             CruiseDirection zDir = CruiseDirection.NONE;
 
@@ -235,8 +235,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         Craft pCraft = playerToCraft.get(player);
         if (pCraft == null) return;
 
-        String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
-        if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
+        String craftType = pCraft.getType().getStringProperty(CraftType.NAME);
+        if (craftType == null || !craftType.equalsIgnoreCase("Fighter")) return;
 
         int newSlot = event.getNewSlot();
         updateCraftGearFromSlot(player, pCraft, newSlot);
@@ -246,20 +246,24 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         int gearShifts = pCraft.getType().getIntProperty(CraftType.GEAR_SHIFTS);
         if (gearShifts <= 1) return;
 
-        int targetGear = 1 + (int) Math.round(((double) slot / 8.0) * (gearShifts - 1));
+        // MATEMATICA INVERTITA: Ora calcoliamo la marcia al contrario rispetto allo slot.
+        // Slot 0 (Tasto 1) -> targetGear = gearShifts (Velocità Minima)
+        // Slot 8 (Tasto 9) -> targetGear = 1 (Velocità Massima / Afterburners)
+        int targetGear = gearShifts - (int) Math.round(((double) slot / 8.0) * (gearShifts - 1));
         if (targetGear > gearShifts) targetGear = gearShifts;
         if (targetGear < 1) targetGear = 1;
 
         pCraft.setCurrentGear(targetGear);
 
+        // Aggiorniamo anche i messaggi della Action Bar per riflettere il nuovo comportamento intuitivo
         Component message;
         if (targetGear == 1) {
-            message = Component.text("MANETTA: MASSIMA POTENZA [Gear " + targetGear + " / " + gearShifts + "]", NamedTextColor.RED);
+            message = Component.text("MANETTA: MASSIMA POTENZA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", NamedTextColor.RED);
         } else if (targetGear == gearShifts) {
-            message = Component.text("MANETTA: MINIMA / MANOVRA [Gear " + targetGear + " / " + gearShifts + "]", NamedTextColor.GREEN);
+            message = Component.text("MANETTA: MINIMA / MANOVRA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", NamedTextColor.GREEN);
         } else {
             message = Component.text("Manetta: ", NamedTextColor.AQUA)
-                    .append(Component.text("Gear " + targetGear + " / " + gearShifts, NamedTextColor.YELLOW));
+                    .append(Component.text("Potenza Media [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", NamedTextColor.YELLOW));
         }
         player.sendActionBar(message);
     }
