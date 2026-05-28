@@ -14,8 +14,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.scheduler.BukkitRunnable;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
+import net.kyori.adventure.text.Component; // Usiamo Adventure nativo di Paper
+import net.kyori.adventure.text.format.NamedTextColor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -303,11 +303,15 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         if (targetGear < 1) targetGear = 1;
 
         pCraft.setCurrentGear(targetGear);
-        String barMessage =
-        "§3✈ §bHDG §f" + baseDir +
-        "   §7|   §eGEAR §f" + targetGear + "§7/§f" + maxGears +
-        "   §7|   " + (targetGear == maxGears ? "§5§lAFTERBURNER" : "§aCRUISE");
-        
-        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(barMessage));
+
+        // Invio Action Bar compatibile al 100% con Paper/Adventure nativo del plugin
+        Component message;
+        if (targetGear == maxGears) {
+            message = Component.text("AFTERBURNERS ACTIVE [Gear " + targetGear + "/" + maxGears + "]", NamedTextColor.DARK_PURPLE);
+        } else {
+            message = Component.text("Manetta: ", NamedTextColor.AQUA)
+                    .append(Component.text("Gear " + targetGear + " / " + maxGears, NamedTextColor.YELLOW));
+        }
+        player.sendActionBar(message);
     }
 }
