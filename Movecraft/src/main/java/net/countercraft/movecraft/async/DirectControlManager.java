@@ -166,7 +166,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         }
         playerToCraft.put(p, (PlayerCraft) c);
         
-        // Imposta la marcia iniziale basandoci sullo slot attualmente impugnato all'ingresso del Direct Control
         updateCraftGearFromSlot(p, (PlayerCraft) c, p.getInventory().getHeldItemSlot());
     }
 
@@ -266,9 +265,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         return CruiseDirection.WEST;
     }
 
-    // =========================================================================
-    // 🟢 UNIONE HOTBAR -> GEAR NATIVI DI MOVECRAFT
-    // =========================================================================
     @EventHandler
     public void onAircraftThrottle(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
@@ -278,7 +274,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
         if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
 
-        // Blocca la bussola nello slot selezionato spostandola visivamente
         int newSlot = event.getNewSlot();
         int compassSlot = -1;
         for (int i = 0; i < 9; i++) {
@@ -295,7 +290,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             player.getInventory().setItem(compassSlot, targetSlotItem);
         }
 
-        // Sincronizza i Gear di Movecraft con lo slot
         updateCraftGearFromSlot(player, pCraft, newSlot);
     }
 
@@ -303,23 +297,17 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         int maxGears = pCraft.getType().getIntProperty(CraftType.GEAR_SHIFTS);
         if (maxGears <= 1) return;
 
-        // Mappiamo proporzionalmente i 9 slot sui Gear massimi del veicolo
-        // Esempio: se l'aereo ha 5 marce, gli slot da 0 a 8 imposteranno dinamicamente le marce da 1 a 5.
         int targetGear = 1 + (int) Math.round(((double) slot / 8.0) * (maxGears - 1));
         
-        // Evitiamo overflow
         if (targetGear > maxGears) targetGear = maxGears;
         if (targetGear < 1) targetGear = 1;
 
-        // Imposta la marcia nativa nell'oggetto del veicolo!
         pCraft.setCurrentGear(targetGear);
-
-        // Manda un feedback grafico sulla Action Bar (Stile CCNet / Movecraft originale)
-       String barMessage =
-       "§3✈ §bHDG §f" + baseDir +
-       "   §7|   §eGEAR §f" + targetGear + "§7/§f" + maxGears +
-       "   §7|   " + (targetGear == maxGears ? "§5§lAFTERBURNER" : "§aCRUISE");
-        }
+        String barMessage =
+        "§3✈ §bHDG §f" + baseDir +
+        "   §7|   §eGEAR §f" + targetGear + "§7/§f" + maxGears +
+        "   §7|   " + (targetGear == maxGears ? "§5§lAFTERBURNER" : "§aCRUISE");
+        
         player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(barMessage));
     }
 }
