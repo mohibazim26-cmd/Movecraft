@@ -179,7 +179,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
 
     // =========================================================================
-    // NEW ADDITIONS: Q AND F KEY ROTATION WITH STICK
+    // NEW ADDITIONS: Q AND F KEY ROTATION WITH STICK - ANTI-CONFLICT VERSION
     // =========================================================================
 
     private PlayerCraft getActiveCraftWithStick(Player player) {
@@ -190,15 +190,19 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         return playerToCraft.get(player);
     }
 
-    // Q Key -> Rotate Left (Anticlockwise)
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    // Q Key -> Rotate Left (Anticlockwise) - LOWEST priority to intercept BEFORE Movecraft original
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
         PlayerCraft pCraft = getActiveCraftWithStick(player);
 
         if (pCraft != null) {
+            // Block the event completely: Minecraft won't drop the item and Movecraft original won't see the action
             event.setCancelled(true);
             player.updateInventory();
+
+            // Clear pending movements to prevent the ship from moving while rotating
+            pendingMovements.remove(player);
 
             Long cooldownEnd = cooldowns.get(pCraft);
             if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
