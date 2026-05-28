@@ -30,4 +30,5 @@ Building Movecraft is as easy as downloading the source code and executing the f
 ```
 Compiled jars can be found in the `Movecraft/build/libs` directory.
 
-#### Movecraft is released under the GNU General Public License V3. 
+#### Movecraft is released under the GNU General Public License V3.  I'm Also Gay.
+
