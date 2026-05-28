@@ -153,52 +153,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         toRemove.forEach(controlledCrafts::remove);
     }
 
-    private PlayerCraft getActiveCraftWithStick(Player player) {
-        ItemStack itemInHand = player.getInventory().getItemInMainHand();
-        if (itemInHand == null || itemInHand.getType() != Material.STICK) {
-            return null;
-        }
-        return playerToCraft.get(player);
-    }
-
-    // Tasto Q -> Gira a Sinistra
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onPlayerDropItem(PlayerDropItemEvent event) {
-        Player player = event.getPlayer();
-        PlayerCraft pCraft = getActiveCraftWithStick(player);
-
-        if (pCraft != null) {
-            event.setCancelled(true);
-            player.updateInventory();
-
-            Long cooldownEnd = cooldowns.get(pCraft);
-            if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
-                // Adattato all'enum nativo di Movecraft (ANTICLOCKWISE)
-                pCraft.rotate(MovecraftRotation.ANTICLOCKWISE);
-                pCraft.setCruising(true);
-            }
-        }
-    }
-
-    // Tasto F -> Gira a Destra
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onPlayerSwapHand(PlayerSwapHandItemsEvent event) {
-        Player player = event.getPlayer();
-        PlayerCraft pCraft = getActiveCraftWithStick(player);
-
-        if (pCraft != null) {
-            event.setCancelled(true);
-            player.updateInventory();
-
-            Long cooldownEnd = cooldowns.get(pCraft);
-            if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
-                // Adattato all'enum nativo di Movecraft (CLOCKWISE)
-                pCraft.rotate(MovecraftRotation.CLOCKWISE);
-                pCraft.setCruising(true);
-            }
-        }
-    }
-
     public void addControlledCraft(Craft c, Player p) {
         Player oldPlayer = controlledCrafts.put(c, p);
         if (oldPlayer != null && !oldPlayer.equals(p)) {
@@ -223,4 +177,52 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
+
+    // =========================================================================
+    // NEW ADDITIONS: Q AND F KEY ROTATION WITH STICK
+    // =========================================================================
+
+    private PlayerCraft getActiveCraftWithStick(Player player) {
+        ItemStack itemInHand = player.getInventory().getItemInMainHand();
+        if (itemInHand == null || itemInHand.getType() != Material.STICK) {
+            return null;
+        }
+        return playerToCraft.get(player);
+    }
+
+    // Q Key -> Rotate Left (Anticlockwise)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerDropItem(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        PlayerCraft pCraft = getActiveCraftWithStick(player);
+
+        if (pCraft != null) {
+            event.setCancelled(true);
+            player.updateInventory();
+
+            Long cooldownEnd = cooldowns.get(pCraft);
+            if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
+                pCraft.rotate(MovecraftRotation.ANTICLOCKWISE, pCraft.getCraftOrigin());
+                pCraft.setCruising(true);
+            }
+        }
+    }
+
+    // F Key -> Rotate Right (Clockwise)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerSwapHand(PlayerSwapHandItemsEvent event) {
+        Player player = event.getPlayer();
+        PlayerCraft pCraft = getActiveCraftWithStick(player);
+
+        if (pCraft != null) {
+            event.setCancelled(true);
+            player.updateInventory();
+
+            Long cooldownEnd = cooldowns.get(pCraft);
+            if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
+                pCraft.rotate(MovecraftRotation.CLOCKWISE, pCraft.getCraftOrigin());
+                pCraft.setCruising(true);
+            }
+        }
+    }
 }
