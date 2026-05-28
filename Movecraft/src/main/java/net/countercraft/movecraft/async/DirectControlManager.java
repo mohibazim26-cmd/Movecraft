@@ -4,6 +4,7 @@ import net.countercraft.movecraft.CruiseDirection;
 import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.PlayerCraft;
+import net.countercraft.movecraft.craft.type.CraftType;
 import net.countercraft.movecraft.events.CraftRotateEvent;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -96,9 +97,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             }
 
             // =========================================================================
-            // DEVIAZIONE COMBAT AIRCRAFT: Isolamento Totale
+            // DEVIAZIONE COMBAT AIRCRAFT: Isolamento Totale (Metodo Compatibile)
             // =========================================================================
-            String craftType = pCraft.getType().getTemplateName().toLowerCase();
+            String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
             if (craftType.equals("fighter") || craftType.equals("bomber")) {
                 processAircraftTick(player, pCraft, movedX, movedZ);
                 continue; 
@@ -282,7 +283,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         PlayerCraft pCraft = playerToCraft.get(player);
         if (pCraft == null) return;
 
-        String craftType = pCraft.getType().getTemplateName().toLowerCase();
+        String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
         if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
 
         int newSlot = event.getNewSlot();
@@ -328,7 +329,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         Player player = playerToCraft.get(pCraft);
         if (player == null) return;
 
-        String craftType = pCraft.getType().getTemplateName().toLowerCase();
+        String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
         if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
 
         Location loc = player.getLocation();
