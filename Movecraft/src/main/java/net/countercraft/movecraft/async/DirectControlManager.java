@@ -97,15 +97,15 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 else cooldowns.remove(pCraft);
             }
 
-            // =========================================================================
-            // DA QUI IN POI CONTINUA IL COMINCIO DEL TUO LOOP RUN()
+// =========================================================================
+            // CONTINUAZIONE DEL LOOP RUN() DOPO IL COOLDOWN
             // =========================================================================
 
-            String craftType = pCraft.getType().getOrigName(); // Usiamo getOrigName() o getName() a seconda del tuo fork
-            if (craftType == null) craftType = pCraft.getType().toString();
+            // Convertiamo in stringa l'intero Type in modo compatibile con OGNI fork esistente
+            String craftType = pCraft.getType() != null ? pCraft.getType().toString() : "";
 
-            // Riconoscimento del caccia ignorando maiuscole/minuscole
-            if (craftType.equalsIgnoreCase("Fighter")) {
+            // Riconoscimento del caccia (cercherà "Fighter" indipendentemente da maiuscole/minuscole)
+            if (craftType.toLowerCase().contains("fighter")) {
                 processAircraftTick(player, pCraft, movedX, movedZ);
                 continue; 
             }
@@ -212,11 +212,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         if (inputW) dy = -1;
         else if (inputS) dy = 1;
 
-        // Rotazione del caccia (A e D ruotano il muso del veicolo)
         if (inputA || inputD) {
             long ora = System.currentTimeMillis();
             long ultimoRuotato = lastRotateMs.getOrDefault(player, 0L);
-            if (ora - ultimoRuotato > 600) { // Cooldown rotazione per non far impazzire i blocchi
+            if (ora - ultimoRuotato > 600) {
                 MovecraftRotation rot = inputA ? MovecraftRotation.ANTICLOCKWISE : MovecraftRotation.CLOCKWISE;
                 pCraft.rotate(rot, pCraft.getWorld());
                 lastRotateMs.put(player, ora);
@@ -240,7 +239,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     // =========================================================================
-    // EVENTO MANETTA TRAMITE HOTBAR (Inserito in fondo alla classe)
+    // EVENTO MANETTA TRAMITE HOTBAR
     // =========================================================================
     @org.bukkit.event.EventHandler
     public void onAircraftThrottle(org.bukkit.event.player.PlayerItemHeldEvent event) {
@@ -248,30 +247,23 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         PlayerCraft pCraft = playerToCraft.get(player);
         if (pCraft == null) return;
 
-        String craftType = pCraft.getType().getOrigName();
-        if (craftType == null) craftType = pCraft.getType().toString();
-        if (!craftType.equalsIgnoreCase("Fighter")) return;
+        String craftType = pCraft.getType() != null ? pCraft.getType().toString() : "";
+        if (!craftType.toLowerCase().contains("fighter")) return;
 
         int newSlot = event.getNewSlot();
         updateCraftGearFromSlot(player, pCraft, newSlot);
     }
 
     private void updateCraftGearFromSlot(Player player, PlayerCraft pCraft, int slot) {
-        // Fallback sicuro se il metodo nativo fallisce: leggiamo 5 marce
         int gearShifts = 5; 
         try {
-            // Cerchiamo di usare il metodo nativo delle marce (usato anche dallo SpeedSign)
-            // Se il tuo fork sposta la costante in un altro oggetto, usiamo la mappa interna di ripiego
+            // Usiamo una lettura dinamica e sicura per evitare errori di compilazione
             int nativeGears = pCraft.getType().getIntProperty(net.countercraft.movecraft.craft.type.CraftType.GEAR_SHIFTS);
             if (nativeGears > 1) gearShifts = nativeGears;
         } catch (Throwable e) {
-            // Se fallisce, usiamo la costante 5 inserita nel passthrough properties
-            gearShifts = 5;
+            gearShifts = 5; // Ripiego standard se il campo non viene mappato correttamente
         }
 
-        // LOGICA INVERTITA RICHIESTA: 
-        // Slot 0 (Hotbar 1) -> Marcia Massima Interna (Gear 5 = Vel Minima)
-        // Slot 8 (Hotbar 9) -> Marcia Minima Interna (Gear 1 = Vel Massima/Afterburner)
         int targetGear = gearShifts - (int) Math.round(((double) slot / 8.0) * (gearShifts - 1));
         if (targetGear > gearShifts) targetGear = gearShifts;
         if (targetGear < 1) targetGear = 1;
@@ -279,7 +271,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         pCraft.setCurrentGear(targetGear);
         internalAircraftGears.put(player, targetGear);
 
-        // Feedback immediato visibile sopra l'inventario del giocatore
         net.kyori.adventure.text.Component message;
         if (targetGear == 1) {
             message = net.kyori.adventure.text.Component.text("MANETTA: MASSIMA POTENZA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", net.kyori.adventure.text.format.NamedTextColor.RED);
