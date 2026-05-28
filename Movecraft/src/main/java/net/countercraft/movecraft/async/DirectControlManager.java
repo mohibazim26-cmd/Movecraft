@@ -1,10 +1,10 @@
 package net.countercraft.movecraft.async;
 
 import net.countercraft.movecraft.CruiseDirection;
+import net.countercraft.movecraft.MovecraftRotation; // Cambiato l'import usando quello ufficiale di Movecraft
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
-import net.countercraft.movecraft.rotation.RotationDirection; // Import per la rotazione del tuo fork
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -153,11 +153,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         toRemove.forEach(controlledCrafts::remove);
     }
 
-    /* ========================================================================= */
-    /* AGGIUNTA GESTIONE TASTI Q ED F IN STILE CCNET CON FILTRO BASTONE (STICK) */
-    /* ========================================================================= */
-
-    // Funzione interna per accertarsi che il player stia usando il DC ed esegua l'azione con lo stick
     private PlayerCraft getActiveCraftWithStick(Player player) {
         ItemStack itemInHand = player.getInventory().getItemInMainHand();
         if (itemInHand == null || itemInHand.getType() != Material.STICK) {
@@ -166,7 +161,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         return playerToCraft.get(player);
     }
 
-    // Intercetta il Tasto Q (Gira a SINISTRA / Antiorario)
+    // Tasto Q -> Gira a Sinistra
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
         Player player = event.getPlayer();
@@ -176,16 +171,16 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             event.setCancelled(true);
             player.updateInventory();
 
-            // Sfrutta la mappa dei cooldown interna di questo file per non buggare i blocchi
             Long cooldownEnd = cooldowns.get(pCraft);
             if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
-                pCraft.rotate(RotationDirection.COUNTER_CLOCKWISE);
+                // Adattato all'enum nativo di Movecraft (ANTICLOCKWISE)
+                pCraft.rotate(MovecraftRotation.ANTICLOCKWISE);
                 pCraft.setCruising(true);
             }
         }
     }
 
-    // Intercetta il Tasto F (Gira a DESTRA / Orario)
+    // Tasto F -> Gira a Destra
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerSwapHand(PlayerSwapHandItemsEvent event) {
         Player player = event.getPlayer();
@@ -197,13 +192,12 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
             Long cooldownEnd = cooldowns.get(pCraft);
             if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
-                pCraft.rotate(RotationDirection.CLOCKWISE);
+                // Adattato all'enum nativo di Movecraft (CLOCKWISE)
+                pCraft.rotate(MovecraftRotation.CLOCKWISE);
                 pCraft.setCruising(true);
             }
         }
     }
-
-    /* ========================================================================= */
 
     public void addControlledCraft(Craft c, Player p) {
         Player oldPlayer = controlledCrafts.put(c, p);
