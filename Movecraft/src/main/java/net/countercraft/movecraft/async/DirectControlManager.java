@@ -4,13 +4,18 @@ import net.countercraft.movecraft.CruiseDirection;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
+import net.countercraft.movecraft.rotation.RotationDirection; // Import per la rotazione del tuo fork
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.ArrayList;
@@ -147,6 +152,58 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         }
         toRemove.forEach(controlledCrafts::remove);
     }
+
+    /* ========================================================================= */
+    /* AGGIUNTA GESTIONE TASTI Q ED F IN STILE CCNET CON FILTRO BASTONE (STICK) */
+    /* ========================================================================= */
+
+    // Funzione interna per accertarsi che il player stia usando il DC ed esegua l'azione con lo stick
+    private PlayerCraft getActiveCraftWithStick(Player player) {
+        ItemStack itemInHand = player.getInventory().getItemInMainHand();
+        if (itemInHand == null || itemInHand.getType() != Material.STICK) {
+            return null;
+        }
+        return playerToCraft.get(player);
+    }
+
+    // Intercetta il Tasto Q (Gira a SINISTRA / Antiorario)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerDropItem(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        PlayerCraft pCraft = getActiveCraftWithStick(player);
+
+        if (pCraft != null) {
+            event.setCancelled(true);
+            player.updateInventory();
+
+            // Sfrutta la mappa dei cooldown interna di questo file per non buggare i blocchi
+            Long cooldownEnd = cooldowns.get(pCraft);
+            if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
+                pCraft.rotate(RotationDirection.COUNTER_CLOCKWISE);
+                pCraft.setCruising(true);
+            }
+        }
+    }
+
+    // Intercetta il Tasto F (Gira a DESTRA / Orario)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerSwapHand(PlayerSwapHandItemsEvent event) {
+        Player player = event.getPlayer();
+        PlayerCraft pCraft = getActiveCraftWithStick(player);
+
+        if (pCraft != null) {
+            event.setCancelled(true);
+            player.updateInventory();
+
+            Long cooldownEnd = cooldowns.get(pCraft);
+            if (cooldownEnd == null || System.currentTimeMillis() > cooldownEnd) {
+                pCraft.rotate(RotationDirection.CLOCKWISE);
+                pCraft.setCruising(true);
+            }
+        }
+    }
+
+    /* ========================================================================= */
 
     public void addControlledCraft(Craft c, Player p) {
         Player oldPlayer = controlledCrafts.put(c, p);
