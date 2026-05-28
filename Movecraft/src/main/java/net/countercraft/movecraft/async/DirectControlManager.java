@@ -317,7 +317,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         }
     }
 
-    // =========================================================================
+// =========================================================================
     // COERENZA TELECAMERA: Intercetta l'evento di rotazione e gira la testa al pilota
     // =========================================================================
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -326,7 +326,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         if (!(craft instanceof PlayerCraft)) return;
         
         PlayerCraft pCraft = (PlayerCraft) craft;
-        Player player = playerToCraft.get(pCraft);
+        // CORREZIONE: Recuperiamo il Player usando la mappa corretta (controlledCrafts)
+        Player player = controlledCrafts.get(pCraft);
         if (player == null) return;
 
         String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
