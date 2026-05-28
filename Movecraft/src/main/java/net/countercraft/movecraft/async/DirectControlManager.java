@@ -97,13 +97,20 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 else cooldowns.remove(pCraft);
             }
 
-            String craftType = pCraft.getType().getStringProperty(CraftType.NAME);
-            if (craftType != null && craftType.equalsIgnoreCase("Fighter")) {
+            // =========================================================================
+            // DA QUI IN POI CONTINUA IL COMINCIO DEL TUO LOOP RUN()
+            // =========================================================================
+
+            String craftType = pCraft.getType().getOrigName(); // Usiamo getOrigName() o getName() a seconda del tuo fork
+            if (craftType == null) craftType = pCraft.getType().toString();
+
+            // Riconoscimento del caccia ignorando maiuscole/minuscole
+            if (craftType.equalsIgnoreCase("Fighter")) {
                 processAircraftTick(player, pCraft, movedX, movedZ);
                 continue; 
             }
 
-            // Movimento standard per gli altri veicoli
+            // Movimento standard per tutti gli altri veicoli (Navi, dirigibili, ecc.)
             CruiseDirection xDir = CruiseDirection.NONE;
             CruiseDirection zDir = CruiseDirection.NONE;
 
@@ -112,11 +119,11 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             if (movedZ > 0.05) zDir = CruiseDirection.SOUTH;
             else if (movedZ < -0.05) zDir = CruiseDirection.NORTH;
 
-            if(Math.abs(movedX) > 0 && !pCraft.getCruising()|| Math.abs(movedZ) > 0 && !pCraft.getCruising() || movedY > 0 && !pCraft.getCruising())
+            if (Math.abs(movedX) > 0 && !pCraft.getCruising() || Math.abs(movedZ) > 0 && !pCraft.getCruising() || movedY > 0 && !pCraft.getCruising())
                 pCraft.setCruising(true);
 
             CruiseDirection cd = pCraft.getCruiseDirection();
-            if(xDir != CruiseDirection.NONE && zDir != CruiseDirection.NONE) {
+            if (xDir != CruiseDirection.NONE && zDir != CruiseDirection.NONE) {
                 if (xDir == CruiseDirection.EAST) {
                     if (zDir == CruiseDirection.NORTH) cd = CruiseDirection.NORTHEAST;
                     else cd = CruiseDirection.SOUTHEAST;
@@ -128,19 +135,19 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             else if (xDir != CruiseDirection.NONE) cd = xDir;
             else if (zDir != CruiseDirection.NONE) cd = zDir;
 
-            if(movedY > 0.15) cd = CruiseDirection.UP;
+            if (movedY > 0.15) cd = CruiseDirection.UP;
 
-            if(player.isSneaking()) {
-                if(!sneakTimes.containsKey(player))
+            if (player.isSneaking()) {
+                if (!sneakTimes.containsKey(player))
                     sneakTimes.put(player, System.currentTimeMillis() + 250);
-                else if(sneakTimes.containsKey(player) && System.currentTimeMillis() > sneakTimes.get(player)){
+                else if (sneakTimes.containsKey(player) && System.currentTimeMillis() > sneakTimes.get(player)) {
                     cd = CruiseDirection.DOWN;
-                    if(!pCraft.getCruising()) pCraft.setCruising(true);
+                    if (!pCraft.getCruising()) pCraft.setCruising(true);
                 }
             }
             else {
-                if(sneakTimes.containsKey(player)) {
-                    if(System.currentTimeMillis() < sneakTimes.get(player)) {
+                if (sneakTimes.containsKey(player)) {
+                    if (System.currentTimeMillis() < sneakTimes.get(player)) {
                         pCraft.setCruising(false);
                     }
                     sneakTimes.remove(player);
@@ -153,7 +160,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         toRemove.forEach(controlledCrafts::remove);
     }
 
-    private void processAircraftTick(Player player, Craft pCraft, double movedX, double movedZ) {
+    // =========================================================================
+    // GESTIONE MOVIMENTO PILOTAGGIO CACCIA (FIGHTER)
+    // =========================================================================
+    private void processAircraftTick(Player player, PlayerCraft pCraft, double movedX, double movedZ) {
         boolean isSneaking = player.isSneaking();
         boolean wasSneaking = lastSneakState.getOrDefault(player, false);
         lastSneakState.put(player, isSneaking);
@@ -202,20 +212,20 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         if (inputW) dy = -1;
         else if (inputS) dy = 1;
 
-        if (inputA) {
-            if (baseDir == CruiseDirection.NORTH) dx = -1; if (baseDir == CruiseDirection.SOUTH) dx = 1;
-            if (baseDir == CruiseDirection.EAST)  dz = -1; if (baseDir == CruiseDirection.WEST)  dz = 1;
-        } else if (inputD) {
-            if (baseDir == CruiseDirection.NORTH) dx = 1;  if (baseDir == CruiseDirection.SOUTH) dx = -1;
-            if (baseDir == CruiseDirection.EAST)  dz = 1;  if (baseDir == CruiseDirection.WEST)  dz = -1;
+        // Rotazione del caccia (A e D ruotano il muso del veicolo)
+        if (inputA || inputD) {
+            long ora = System.currentTimeMillis();
+            long ultimoRuotato = lastRotateMs.getOrDefault(player, 0L);
+            if (ora - ultimoRuotato > 600) { // Cooldown rotazione per non far impazzire i blocchi
+                MovecraftRotation rot = inputA ? MovecraftRotation.ANTICLOCKWISE : MovecraftRotation.CLOCKWISE;
+                pCraft.rotate(rot, pCraft.getWorld());
+                lastRotateMs.put(player, ora);
+                return;
+            }
         }
 
         if (dx != 0 || dy != 0 || dz != 0) {
             pCraft.translate(pCraft.getWorld(), dx, dy, dz);
-            Location lockedLoc = pilotLockedLocations.get(player);
-            if (lockedLoc != null) {
-                pilotLockedLocations.put(player, lockedLoc.clone().add(dx, dy, dz));
-            }
         }
     }
 
@@ -229,65 +239,71 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         return CruiseDirection.WEST;
     }
 
-    @EventHandler
-    public void onAircraftThrottle(PlayerItemHeldEvent event) {
+    // =========================================================================
+    // EVENTO MANETTA TRAMITE HOTBAR (Inserito in fondo alla classe)
+    // =========================================================================
+    @org.bukkit.event.EventHandler
+    public void onAircraftThrottle(org.bukkit.event.player.PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
-        Craft pCraft = playerToCraft.get(player);
+        PlayerCraft pCraft = playerToCraft.get(player);
         if (pCraft == null) return;
 
-        String craftType = pCraft.getType().getStringProperty(CraftType.NAME);
-        if (craftType == null || !craftType.equalsIgnoreCase("Fighter")) return;
+        String craftType = pCraft.getType().getOrigName();
+        if (craftType == null) craftType = pCraft.getType().toString();
+        if (!craftType.equalsIgnoreCase("Fighter")) return;
 
         int newSlot = event.getNewSlot();
         updateCraftGearFromSlot(player, pCraft, newSlot);
     }
-    
-    private void updateCraftGearFromSlot(Player player, Craft pCraft, int slot) {
-        // Leggiamo la marcia in modo sicuro dal passthrough del file .craft
-        int gearShifts = 5; // Valore di riserva se non trova nulla
-        Object gearProp = pCraft.getType().getPassthroughProperty("gearShifts");
-        if (gearProp instanceof Number) {
-            gearShifts = ((Number) gearProp).intValue();
-        } else if (gearProp instanceof String) {
-            try {
-                gearShifts = Integer.parseInt((String) gearProp);
-            } catch (NumberFormatException ignored) {}
+
+    private void updateCraftGearFromSlot(Player player, PlayerCraft pCraft, int slot) {
+        // Fallback sicuro se il metodo nativo fallisce: leggiamo 5 marce
+        int gearShifts = 5; 
+        try {
+            // Cerchiamo di usare il metodo nativo delle marce (usato anche dallo SpeedSign)
+            // Se il tuo fork sposta la costante in un altro oggetto, usiamo la mappa interna di ripiego
+            int nativeGears = pCraft.getType().getIntProperty(net.countercraft.movecraft.craft.type.CraftType.GEAR_SHIFTS);
+            if (nativeGears > 1) gearShifts = nativeGears;
+        } catch (Throwable e) {
+            // Se fallisce, usiamo la costante 5 inserita nel passthrough properties
+            gearShifts = 5;
         }
 
-        if (gearShifts <= 1) return;
-
-        // Logica invertita: Slot 0 (Tasto 1) = Minimo, Slot 8 (Tasto 9) = Massimo (Gear 1)
+        // LOGICA INVERTITA RICHIESTA: 
+        // Slot 0 (Hotbar 1) -> Marcia Massima Interna (Gear 5 = Vel Minima)
+        // Slot 8 (Hotbar 9) -> Marcia Minima Interna (Gear 1 = Vel Massima/Afterburner)
         int targetGear = gearShifts - (int) Math.round(((double) slot / 8.0) * (gearShifts - 1));
         if (targetGear > gearShifts) targetGear = gearShifts;
         if (targetGear < 1) targetGear = 1;
 
         pCraft.setCurrentGear(targetGear);
+        internalAircraftGears.put(player, targetGear);
 
-        // Messaggio sulla action bar
-        Component message;
+        // Feedback immediato visibile sopra l'inventario del giocatore
+        net.kyori.adventure.text.Component message;
         if (targetGear == 1) {
-            message = Component.text("MANETTA: MASSIMA POTENZA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", NamedTextColor.RED);
+            message = net.kyori.adventure.text.Component.text("MANETTA: MASSIMA POTENZA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", net.kyori.adventure.text.format.NamedTextColor.RED);
         } else if (targetGear == gearShifts) {
-            message = Component.text("MANETTA: MINIMA / MANOVRA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", NamedTextColor.GREEN);
+            message = net.kyori.adventure.text.Component.text("MANETTA: MINIMA / MANOVRA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", net.kyori.adventure.text.format.NamedTextColor.GREEN);
         } else {
-            message = Component.text("Manetta: ", NamedTextColor.AQUA)
-                    .append(Component.text("Potenza Media [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", NamedTextColor.YELLOW));
+            message = net.kyori.adventure.text.Component.text("Manetta: ", net.kyori.adventure.text.format.NamedTextColor.AQUA)
+                    .append(net.kyori.adventure.text.Component.text("Potenza Media [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", net.kyori.adventure.text.format.NamedTextColor.YELLOW));
         }
         player.sendActionBar(message);
     }
 
     public void addControlledCraft(Craft c, Player p) {
+        if (!(c instanceof PlayerCraft)) return;
         controlledCrafts.put(c, p);
-        playerToCraft.put(p, c);
-        pilotLockedLocations.put(p, p.getLocation());
-        updateCraftGearFromSlot(p, c, p.getInventory().getHeldItemSlot());
+        playerToCraft.put(p, (PlayerCraft) c);
+        updateCraftGearFromSlot(p, (PlayerCraft) c, p.getInventory().getHeldItemSlot());
     }
 
     public void removeControlledCraft(Craft c) {
         Player p = controlledCrafts.remove(c);
         if (p != null) {
             playerToCraft.remove(p);
-            pilotLockedLocations.remove(p);
+            internalAircraftGears.remove(p);
         }
     }
 
