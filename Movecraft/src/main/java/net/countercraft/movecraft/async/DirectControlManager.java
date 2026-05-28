@@ -241,21 +241,29 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         int newSlot = event.getNewSlot();
         updateCraftGearFromSlot(player, pCraft, newSlot);
     }
-
+    
     private void updateCraftGearFromSlot(Player player, Craft pCraft, int slot) {
-        int gearShifts = pCraft.getType().getIntProperty(CraftType.GEAR_SHIFTS);
+        // Leggiamo la marcia in modo sicuro dal passthrough del file .craft
+        int gearShifts = 5; // Valore di riserva se non trova nulla
+        Object gearProp = pCraft.getType().getPassthroughProperty("gearShifts");
+        if (gearProp instanceof Number) {
+            gearShifts = ((Number) gearProp).intValue();
+        } else if (gearProp instanceof String) {
+            try {
+                gearShifts = Integer.parseInt((String) gearProp);
+            } catch (NumberFormatException ignored) {}
+        }
+
         if (gearShifts <= 1) return;
 
-        // MATEMATICA INVERTITA: Ora calcoliamo la marcia al contrario rispetto allo slot.
-        // Slot 0 (Tasto 1) -> targetGear = gearShifts (Velocità Minima)
-        // Slot 8 (Tasto 9) -> targetGear = 1 (Velocità Massima / Afterburners)
+        // Logica invertita: Slot 0 (Tasto 1) = Minimo, Slot 8 (Tasto 9) = Massimo (Gear 1)
         int targetGear = gearShifts - (int) Math.round(((double) slot / 8.0) * (gearShifts - 1));
         if (targetGear > gearShifts) targetGear = gearShifts;
         if (targetGear < 1) targetGear = 1;
 
         pCraft.setCurrentGear(targetGear);
 
-        // Aggiorniamo anche i messaggi della Action Bar per riflettere il nuovo comportamento intuitivo
+        // Messaggio sulla action bar
         Component message;
         if (targetGear == 1) {
             message = Component.text("MANETTA: MASSIMA POTENZA [Slot " + (slot + 1) + " -> Gear " + targetGear + "]", NamedTextColor.RED);
