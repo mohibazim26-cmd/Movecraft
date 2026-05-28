@@ -1,342 +1,104 @@
 package net.countercraft.movecraft.async;
 
-
-
 import net.countercraft.movecraft.CruiseDirection;
-
+import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
-
 import net.countercraft.movecraft.craft.CraftManager;
-
 import net.countercraft.movecraft.craft.PlayerCraft;
-
 import org.bukkit.Location;
-
 import org.bukkit.entity.Player;
-
 import org.bukkit.util.Vector;
-
 import org.bukkit.event.EventHandler;
-
 import org.bukkit.event.EventPriority;
-
 import org.bukkit.event.Listener;
-
 import org.bukkit.event.player.PlayerMoveEvent;
-
 import org.bukkit.scheduler.BukkitRunnable;
-
-
-
 import java.util.ArrayList;
-
 import java.util.HashMap;
-
 import java.util.List;
-
 import java.util.Map;
 
-
-
 public class DirectControlManager extends BukkitRunnable implements Listener {
-
     private final Map<Craft, Player> controlledCrafts = new HashMap<>();
-
     private final Map<Player, PlayerCraft> playerToCraft = new HashMap<>();
-
     private final Map<Craft, Long> cooldowns = new HashMap<>();
-
     private final Map<Player, Long> sneakTimes = new HashMap<>();
-
     private final Map<Player, double[]> pendingMovements = new HashMap<>();
-
     private final Map<Player, double[]> lastInput = new HashMap<>();
-
     private final Map<Player, Long> lastInputTime = new HashMap<>();
+    private final Map<Player, Long> lastRotateMs = new HashMap<>(); // Cooldown rotazione caccia
 
-
+    // Mappe di fallback interne per garantire la compilazione su qualsiasi fork
+    private final Map<Player, Integer> internalAircraftGears = new HashMap<>();
+    private final Map<Craft, Long> aircraftTickCooldown = new HashMap<>();
+    private final Map<Player, Boolean> lastSneakState = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST)
-
     public void onPlayerMove(PlayerMoveEvent event) {
-
         Player p = event.getPlayer();
-
         PlayerCraft pCraft = playerToCraft.get(p);
-
         if (pCraft == null) return;
 
-
-
         Location to = event.getTo();
-
         pendingMovements.put(p, new double[]{
-
             to.getX() - pCraft.getPilotLockedX(),
-
             to.getY() - pCraft.getPilotLockedY(),
-
             to.getZ() - pCraft.getPilotLockedZ()
-
         });
 
-
-
         // Lock position but allow head rotation. Zero vertical velocity to prevent
-
         // gravity accumulation causing the player to clip through the block below them.
-
         Vector vel = p.getVelocity();
-
         p.setVelocity(new Vector(vel.getX(), 0, vel.getZ()));
-
         event.setTo(new Location(to.getWorld(),
-
             pCraft.getPilotLockedX(), pCraft.getPilotLockedY(), pCraft.getPilotLockedZ(),
-
             to.getYaw(), to.getPitch()));
-
     }
-
-
 
     @Override
-
     public void run() {
-
         if (controlledCrafts.isEmpty()) return;
-
         List<Craft> toRemove = new ArrayList<>();
-
         for (Map.Entry<Craft, Player> controlledCraft : controlledCrafts.entrySet())
-
         {
-
             if(controlledCraft.getKey() == null || controlledCraft.getValue() == null) {
-
                 toRemove.add(controlledCraft.getKey());
-
                 continue;
-
             }
-
             Player player = controlledCraft.getValue();
-
             PlayerCraft pCraft = (PlayerCraft)controlledCraft.getKey();
 
-
-
             double[] delta = pendingMovements.remove(player);
-
             double movedX, movedY, movedZ;
-
             if (delta != null && (Math.abs(delta[0]) > 0.05 || Math.abs(delta[1]) > 0.05 || Math.abs(delta[2]) > 0.05)) {
-
                 movedX = delta[0];
-
                 movedY = delta[1];
-
                 movedZ = delta[2];
-
                 lastInput.put(player, delta);
-
                 lastInputTime.put(player, System.currentTimeMillis());
-
             } else {
-
                 Long t = lastInputTime.get(player);
-
                 double[] last = lastInput.get(player);
-
                 if (last != null && t != null && System.currentTimeMillis() - t < 150) {
-
                     movedX = last[0];
-
                     movedY = last[1];
-
                     movedZ = last[2];
-
                 } else {
-
                     movedX = 0;
-
                     movedY = 0;
-
                     movedZ = 0;
-
                     lastInput.remove(player);
-
                     lastInputTime.remove(player);
-
                 }
-
             }
-
-
 
             if(cooldowns.containsKey(pCraft))
-
             {
-
                 if(cooldowns.get(pCraft) > System.currentTimeMillis()) continue;
-
                 else cooldowns.remove(pCraft);
-
             }
 
-            CruiseDirection xDir = CruiseDirection.NONE;
-
-            CruiseDirection zDir = CruiseDirection.NONE;
-
-
-
-            if (movedX > 0.05)
-
-                xDir = CruiseDirection.EAST;
-
-            else if (movedX < -0.05)
-
-                xDir = CruiseDirection.WEST;
-
-            if (movedZ > 0.05)
-
-                zDir = CruiseDirection.SOUTH;
-
-            else if (movedZ < -0.05)
-
-                zDir = CruiseDirection.NORTH;
-
-
-
-            if(Math.abs(movedX) > 0 && !pCraft.getCruising()|| Math.abs(movedZ) > 0 && !pCraft.getCruising() || movedY > 0 && !pCraft.getCruising())
-
-                pCraft.setCruising(true);
-
-
-
-            CruiseDirection cd = pCraft.getCruiseDirection();
-
-            if(xDir != CruiseDirection.NONE && zDir != CruiseDirection.NONE)
-
-            {
-
-                if (xDir == CruiseDirection.EAST)
-
-                {
-
-                    if (zDir == CruiseDirection.NORTH) cd = CruiseDirection.NORTHEAST;
-
-                    else cd = CruiseDirection.SOUTHEAST;
-
-                }
-
-                else
-
-                {
-
-                    if (zDir == CruiseDirection.NORTH) cd = CruiseDirection.NORTHWEST;
-
-                    else cd = CruiseDirection.SOUTHWEST;
-
-                }
-
-            }
-
-            else if (xDir != CruiseDirection.NONE) cd = xDir;
-
-            else if (zDir != CruiseDirection.NONE) cd = zDir;
-
-
-
-            if(movedY > 0.15) cd = CruiseDirection.UP;
-
-
-
-            if(player.isSneaking()) {
-
-                if(!sneakTimes.containsKey(player))
-
-                    sneakTimes.put(player, System.currentTimeMillis() + 250);
-
-                else if(sneakTimes.containsKey(player) && System.currentTimeMillis() > sneakTimes.get(player)){
-
-                    cd = CruiseDirection.DOWN;
-
-                    if(!pCraft.getCruising()) pCraft.setCruising(true);
-
-                }
-
-            }
-
-            else {
-
-                if(sneakTimes.containsKey(player)) {
-
-                    if(System.currentTimeMillis() < sneakTimes.get(player)) {
-
-                        pCraft.setCruising(false);
-
-                    }
-
-                    sneakTimes.remove(player);
-
-                }
-
-            }
-
-
-
-            if (cd != pCraft.getCruiseDirection())
-
-                pCraft.setCruiseDirection(cd);
-
-        }
-
-        toRemove.forEach(controlledCrafts::remove);
-
-    }
-
-
-
-    public void addControlledCraft(Craft c, Player p) {
-
-        Player oldPlayer = controlledCrafts.put(c, p);
-
-        if (oldPlayer != null && !oldPlayer.equals(p)) {
-
-            playerToCraft.remove(oldPlayer);
-
-            pendingMovements.remove(oldPlayer);
-
-            lastInput.remove(oldPlayer);
-
-            lastInputTime.remove(oldPlayer);
-
-            sneakTimes.remove(oldPlayer);
-
-        }
-
-        playerToCraft.put(p, (PlayerCraft) c);
-
-    }
-
-    public void removeControlledCraft(Craft c) {
-        Player p = controlledCrafts.remove(c);
-        if (p != null) {
-            playerToCraft.remove(p);
-
-            pendingMovements.remove(p);
-
-            lastInput.remove(p);
-
-            lastInputTime.remove(p);
-
-            sneakTimes.remove(p);
-        }
-    }
-    public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
-} 
-// =========================================================================
+            // =========================================================================
             // DEVIAZIONE COMBAT AIRCRAFT: Logica Sicura e Modello di Volo con Smoothing
             // =========================================================================
             String craftType = pCraft.getType().getTemplateName().toLowerCase();
@@ -394,11 +156,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         }
         toRemove.forEach(controlledCrafts::remove);
     }
-
-    // Mappe di fallback interne per garantire la compilazione su qualsiasi fork
-    private final Map<Player, Integer> internalAircraftGears = new HashMap<>();
-    private final Map<Craft, Long> aircraftTickCooldown = new HashMap<>();
-    private final Map<Player, Boolean> lastSneakState = new HashMap<>();
 
     public void addControlledCraft(Craft c, Player p) {
         Player oldPlayer = controlledCrafts.put(c, p);
@@ -462,10 +219,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         long lastTickMove = aircraftTickCooldown.getOrDefault(pCraft, 0L);
 
         // Calcoliamo il delay in millisecondi in base alla marcia per evitare l'effetto missile
-        // Gear 9 = 50ms (ogni tick). Gear 1 = 250ms (1 volta ogni 5 tick).
         long requiredDelay = Math.max(50, 300 - (currentGear * 28)); 
         if (now - lastTickMove < requiredDelay) {
-            return; // Salta questo tick, l'aereo sta decelerando fluidamente
+            return; // Salta questo tick, l'aereo si muove in modo fluido basandosi sul tempo
         }
         aircraftTickCooldown.put(pCraft, now);
 
@@ -478,6 +234,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             case SOUTH: dz = 1; break;
             case EAST:  dx = 1; break;
             case WEST:  dx = -1; break;
+            default: break;
         }
 
         // Mappatura input locali WASD relativi
@@ -514,7 +271,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 // Tenta la traslazione nativa della HitBox (presente in tutte le versioni)
                 pCraft.move(dx, dy, dz); 
             } catch (NoSuchMethodError e) {
-                // Fallback estremo se il fork usa la vecchia nomenclatura del Movecraft originale
+                // Fallback se il fork usa la vecchia nomenclatura del Movecraft originale
                 pCraft.translate(pCraft.getWorld(), dx, dy, dz);
             }
         }
@@ -569,7 +326,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 if (newSlot == 8) {
                     meta.setDisplayName("§5Afterburners §a- Attivi");
                 } else {
-                    meta.setDisplayName("§rBussola di Volo"); // Stringa fissa per ripulire l'item in sicurezza
+                    meta.setDisplayName("§rBussola di Volo"); 
                 }
                 currentCompass.setItemMeta(meta);
             }
@@ -580,7 +337,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         internalAircraftGears.put(player, targetGear);
         try {
             pCraft.setCurrentGear(targetGear);
-        } catch (NoSuchMethodError ignored) {} // Ignora se il fork non supporta le marce nativamente
+        } catch (NoSuchMethodError ignored) {} 
 
         double fuelBurnRate = 0.5 + (((double) targetGear / 9.0) * 1.5);
         pCraft.setFuelBurnMultiplier(fuelBurnRate);
