@@ -5,7 +5,6 @@ import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
-import net.countercraft.movecraft.events.CraftRotateEvent;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
@@ -13,7 +12,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.scheduler.BukkitRunnable;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,9 +30,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Player, double[]> pendingMovements = new HashMap<>();
     private final Map<Player, double[]> lastInput = new HashMap<>();
     private final Map<Player, Long> lastInputTime = new HashMap<>();
-
-    // Mappe di stato isolate per i caccia
-    private final Map<Craft, Long> aircraftTickCooldown = new HashMap<>();
     private final Map<Player, Boolean> lastSneakState = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -97,7 +96,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             }
 
             // =========================================================================
-            // DEVIAZIONE COMBAT AIRCRAFT: Isolamento Totale (Metodo Compatibile)
+            // DEVIAZIONE COMBAT AIRCRAFT: Volo e Direzione Pura
             // =========================================================================
             String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
             if (craftType.equals("fighter") || craftType.equals("bomber")) {
@@ -166,6 +165,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             lastSneakState.remove(oldPlayer);
         }
         playerToCraft.put(p, (PlayerCraft) c);
+        
+        // Imposta la marcia iniziale basandoci sullo slot attualmente impugnato all'ingresso del Direct Control
+        updateCraftGearFromSlot(p, (PlayerCraft) c, p.getInventory().getHeldItemSlot());
     }
 
     public void removeControlledCraft(Craft c) {
@@ -182,9 +184,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
     public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
 
-    // =========================================================================
-    // MODELLO DI VOLO REATTIVO (W-A-S-D TRIDIMENSIONALE RIGIDO)
-    // =========================================================================
     private void processAircraftTick(Player player, PlayerCraft pCraft, double movedX, double movedZ) {
         boolean isSneaking = player.isSneaking();
         boolean wasSneaking = lastSneakState.getOrDefault(player, false);
@@ -204,13 +203,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             pCraft.setCruiseDirection(getAircraftCardinalDirection(player.getLocation().getYaw()));
             pCraft.setCruising(true);
         }
-
-        long now = System.currentTimeMillis();
-        long lastTickMove = aircraftTickCooldown.getOrDefault(pCraft, 0L);
-        if (now - lastTickMove < 100L) { 
-            return; 
-        }
-        aircraftTickCooldown.put(pCraft, now);
 
         CruiseDirection baseDir = pCraft.getCruiseDirection();
         int dx = 0, dy = 0, dz = 0;
@@ -275,10 +267,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     // =========================================================================
-    // INTERFACCIA VISIVA HOTBAR COMPASS
+    // 🟢 UNIONE HOTBAR -> GEAR NATIVI DI MOVECRAFT
     // =========================================================================
-    @org.bukkit.event.EventHandler
-    public void onAircraftThrottle(org.bukkit.event.player.PlayerItemHeldEvent event) {
+    @EventHandler
+    public void onAircraftThrottle(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
         PlayerCraft pCraft = playerToCraft.get(player);
         if (pCraft == null) return;
@@ -286,6 +278,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
         if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
 
+        // Blocca la bussola nello slot selezionato spostandola visivamente
         int newSlot = event.getNewSlot();
         int compassSlot = -1;
         for (int i = 0; i < 9; i++) {
@@ -295,7 +288,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 break;
             }
         }
-
         if (compassSlot != -1 && compassSlot != newSlot) {
             org.bukkit.inventory.ItemStack compassItem = player.getInventory().getItem(compassSlot);
             org.bukkit.inventory.ItemStack targetSlotItem = player.getInventory().getItem(newSlot);
@@ -303,46 +295,31 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             player.getInventory().setItem(compassSlot, targetSlotItem);
         }
 
-        org.bukkit.inventory.ItemStack currentCompass = player.getInventory().getItem(newSlot);
-        if (currentCompass != null && currentCompass.getType() == org.bukkit.Material.COMPASS) {
-            org.bukkit.inventory.meta.ItemMeta meta = currentCompass.getItemMeta();
-            if (meta != null) {
-                if (newSlot == 8) {
-                    meta.setDisplayName("§5Afterburners §a- Attivi");
-                } else {
-                    meta.setDisplayName("§rBussola di Volo"); 
-                }
-                currentCompass.setItemMeta(meta);
-            }
-        }
+        // Sincronizza i Gear di Movecraft con lo slot
+        updateCraftGearFromSlot(player, pCraft, newSlot);
     }
 
-// =========================================================================
-    // COERENZA TELECAMERA: Intercetta l'evento di rotazione e gira la testa al pilota
-    // =========================================================================
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onCraftRotate(CraftRotateEvent event) {
-        Craft craft = event.getCraft();
-        if (!(craft instanceof PlayerCraft)) return;
-        
-        PlayerCraft pCraft = (PlayerCraft) craft;
-        // CORREZIONE: Recuperiamo il Player usando la mappa corretta (controlledCrafts)
-        Player player = controlledCrafts.get(pCraft);
-        if (player == null) return;
+    private void updateCraftGearFromSlot(Player player, PlayerCraft pCraft, int slot) {
+        int maxGears = pCraft.getType().getIntProperty(CraftType.GEAR_SHIFTS);
+        if (maxGears <= 1) return;
 
-        String craftType = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
-        if (!craftType.equals("fighter") && !craftType.equals("bomber")) return;
-
-        Location loc = player.getLocation();
-        float currentYaw = loc.getYaw();
+        // Mappiamo proporzionalmente i 9 slot sui Gear massimi del veicolo
+        // Esempio: se l'aereo ha 5 marce, gli slot da 0 a 8 imposteranno dinamicamente le marce da 1 a 5.
+        int targetGear = 1 + (int) Math.round(((double) slot / 8.0) * (maxGears - 1));
         
-        if (event.getRotation() == MovecraftRotation.CLOCKWISE) {
-            loc.setYaw(currentYaw + 90.0F);
-        } else {
-            loc.setYaw(currentYaw - 90.0F);
+        // Evitiamo overflow
+        if (targetGear > maxGears) targetGear = maxGears;
+        if (targetGear < 1) targetGear = 1;
+
+        // Imposta la marcia nativa nell'oggetto del veicolo!
+        pCraft.setCurrentGear(targetGear);
+
+        // Manda un feedback grafico sulla Action Bar (Stile CCNet / Movecraft originale)
+       String barMessage =
+       "§3✈ §bHDG §f" + baseDir +
+       "   §7|   §eGEAR §f" + targetGear + "§7/§f" + maxGears +
+       "   §7|   " + (targetGear == maxGears ? "§5§lAFTERBURNER" : "§aCRUISE");
         }
-        
-        player.teleport(loc);
-        pCraft.setCruiseDirection(getAircraftCardinalDirection(loc.getYaw()));
+        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(barMessage));
     }
 }
