@@ -68,7 +68,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 continue;
             }
 
-            // Manteniamo Fighter e Bomber esattamente con il case-sensitive originale
             String craftName = pCraft.getType().getStringProperty(CraftType.NAME);
 
             // ==========================================
@@ -85,14 +84,11 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     if (pCraft.getCurrentGear() != targetGear) {
                         pCraft.setCurrentGear(targetGear);
                         
-                        // Cooldown dinamico inverso (Slot 9 = 2 tick, Slot 1 = 15 tick)
-                        int calculatedCooldown = 15 - (int) Math.round(((double) currentSlot / 8.0) * 13.0);
-                        pCraft.setTickCooldown(calculatedCooldown);
-
-                        double bps = (20.0 / calculatedCooldown) * 3.0;
+                        // Mappatura lineare sul testo: Slot 0 (Gear 1) = 30.0 Bps | Slot 8 (Gear 9) = 4.0 Bps
+                        double bps = 30.0 - ((double) currentSlot * (26.0 / 8.0));
+                        
                         String msg = "§e§lMANETTA: Gear " + targetGear + "/9 §7(" + String.format("%.1f", bps) + " Blocs/s)";
                         
-                        // Alternativa nativa super-compatibile che non richiede import md_5/bungee
                         player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
                             net.md_5.bungee.api.chat.TextComponent.fromLegacyText(msg)
                         );
@@ -102,7 +98,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 // --- 2. GESTIONE AUTOCRUISE E SHIFT CONTRO LO SPAM DI BASECRAFT ---
                 if (player.isSneaking()) {
                     if (pCraft.getCruising()) {
-                        pCraft.setCruising(false); // Eseguito solo UNA volta all'aggancio dello sneak
+                        pCraft.setCruising(false); 
                     }
                     continue; 
                 } else {
@@ -116,7 +112,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                         else if (yaw >= 225 && yaw < 315) newDir = CruiseDirection.EAST;
 
                         pCraft.setCruiseDirection(newDir);
-                        pCraft.setCruising(true); // Eseguito solo UNA volta al rilascio dello sneak
+                        pCraft.setCruising(true); 
                     }
                 }
 
@@ -175,16 +171,16 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     double crossProduct = facingDir.getX() * inputDir.getZ() - facingDir.getZ() * inputDir.getX();
 
                     if (dotProduct > 0.5) {
-                        dy = -1; // W: Picchiata
+                        dy = -1; 
                     } else if (dotProduct < -0.5) {
-                        dy = 1;  // S: Cabrata
+                        dy = 1;  
                     }
                     
                     if (crossProduct > 0.5) {
-                        dx += rightX * 3; // D: Strafe Destra
+                        dx += rightX * 3; 
                         dz += rightZ * 3;
                     } else if (crossProduct < -0.5) {
-                        dx -= rightX * 3; // A: Strafe Sinistra
+                        dx -= rightX * 3; 
                         dz -= rightZ * 3;
                     }
                 }
