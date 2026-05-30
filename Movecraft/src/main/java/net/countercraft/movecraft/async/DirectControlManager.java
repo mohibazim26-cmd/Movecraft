@@ -79,7 +79,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 PlayerInventory inv = player.getInventory();
                 int currentSlot = inv.getHeldItemSlot();
 
-                // --- SISTEMAZIONE AUTOMATICA SICURA DELL'OROLOGIO ---
+                // Ripristino automatico dell'orologio nello slot corrente
                 ItemStack handItem = inv.getItemInMainHand();
                 if (handItem == null || handItem.getType() != Material.CLOCK) {
                     for (int i = 0; i < 36; i++) {
@@ -92,19 +92,16 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                 }
 
-                // --- 1. GESTIONE MANETTA (THROTTLE) ---
+                // GESTIONE MANETTA (Cambio Marcia)
                 ItemStack activeHand = inv.getItemInMainHand();
                 if (activeHand != null && activeHand.getType() == Material.CLOCK) {
-                    
-                    // Slot 0 (inizio hotbar) -> Gear 1 (Minimo skip) | Slot 8 (fine hotbar) -> Gear 9 (Massimo skip)
                     int targetGear = currentSlot + 1; 
 
                     if (pCraft.getCurrentGear() != targetGear) {
                         pCraft.setCurrentGear(targetGear);
                         
-                        // Scala lineare della distanza calcolata sui blocchi percorsi ogni 3 secondi (timer fisso)
+                        // Calcola la velocità teorica da mostrare in actionbar
                         double blocksPerThreeSeconds = 5.0 + ((double) currentSlot * (10.0 / 8.0));
-                        
                         String msg = "§e§lMANETTA: Gear " + targetGear + "/9 §7(" + String.format("%.1f", blocksPerThreeSeconds) + " Blocs/3s)";
                         
                         player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
@@ -113,7 +110,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                 }
 
-                // --- 2. GESTIONE AUTOCRUISE E SHIFT CONTRO LO SPAM DI BASECRAFT ---
+                // GESTIONE AUTOCRUISE
                 if (player.isSneaking()) {
                     if (pCraft.getCruising()) {
                         pCraft.setCruising(false); 
@@ -134,7 +131,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                 }
 
-                // --- 3. LETTURA INPUT MOVIMENTO ---
+                // LETTURA INPUT MOVIMENTO
                 double[] delta = pendingMovements.remove(player);
                 double movedX = 0, movedY = 0, movedZ = 0;
 
@@ -157,12 +154,20 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                 }
 
+                // Controllo del Cooldown nativo di Movecraft (Usa i tickCooldown del file .craft)
                 if (cooldowns.containsKey(pCraft)) {
                     if (cooldowns.get(pCraft) > System.currentTimeMillis()) continue;
                     else cooldowns.remove(pCraft);
                 }
 
-                // --- 4. CALCOLO DIREZIONALE AEREI ---
+                // --- CALCOLO VELOCITÀ BASATO SUL FILE .CRAFT (Risolto il bug della super velocità) ---
+                int currentGear = pCraft.getCurrentGear();
+                // Prende lo skip dei blocchi impostato nel file .craft per la marcia attuale (es: cruiseSkipBlocksGear3)
+                int speedMultiplier = pCraft.getType().getIntProperty(CraftType.getPerGearProperty("cruiseSkipBlocks", currentGear));
+                if (speedMultiplier <= 0) {
+                    speedMultiplier = 1; // Sicurezza se non trova la marcia
+                }
+
                 CruiseDirection cruiseDir = pCraft.getCruiseDirection();
                 int forwardX = 0;
                 int forwardZ = 0;
@@ -175,9 +180,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 int rightX = -forwardZ;
                 int rightZ = forwardX;
 
-                int dx = forwardX * 3;
+                // MODIFICATO: Moltiplica per lo speedMultiplier dinamico preso dal file .craft
+                int dx = forwardX * speedMultiplier;
                 int dy = 0;
-                int dz = forwardZ * 3;
+                int dz = forwardZ * speedMultiplier;
 
                 Location eyeLoc = player.getLocation();
                 Vector facingDir = eyeLoc.getDirection().setY(0).normalize();
@@ -195,21 +201,24 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                     
                     if (crossProduct > 0.5) {
-                        dx += rightX * 3; 
-                        dz += rightZ * 3;
+                        dx += rightX * speedMultiplier; 
+                        dz += rightZ * speedMultiplier;
                     } else if (crossProduct < -0.5) {
-                        dx -= rightX * 3; 
-                        dz -= rightZ * 3;
+                        dx -= rightX * speedMultiplier; 
+                        dz -= rightZ * speedMultiplier;
                     }
                 }
 
                 if (dx != 0 || dy != 0 || dz != 0) {
                     pCraft.translate(pCraft.getWorld(), dx, dy, dz);
+                    // Applica il cooldown corretto salvando il tempo di blocco (evita lo spam continuo)
+                    long cooldownMs = pCraft.getType().getIntProperty(CraftType.TICK_COOLDOWN) * 50L;
+                    cooldowns.put(pCraft, System.currentTimeMillis() + cooldownMs);
                 }
 
             } else {
                 // ==========================================
-                // LOGICA VEICOLI STANDARD (Navi / Tank / Ecc)
+                // LOGICA VEICOLI STANDARD (Rimasta invariata)
                 // ==========================================
                 double[] delta = pendingMovements.remove(player);
                 double movedX, movedY, movedZ;
