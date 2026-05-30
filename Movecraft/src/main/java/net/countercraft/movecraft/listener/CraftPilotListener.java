@@ -59,7 +59,7 @@ public class CraftPilotListener implements Listener {
                     oldBar.removeAll();
                 }
 
-                BossBar bossBar = Bukkit.createBossBar("Integrità: 100% || Benzina: Calcolo...", BarColor.GREEN, BarStyle.SOLID);
+                BossBar bossBar = Bukkit.createBossBar("Integrità: Calcolo... || Benzina: Calcolo...", BarColor.GREEN, BarStyle.SOLID);
                 bossBar.addPlayer(player);
                 craftBossBars.put(player.getUniqueId(), bossBar);
             }
@@ -74,20 +74,6 @@ public class CraftPilotListener implements Listener {
             transferTrackedLocations(parent, subCraft, (trackedLocation) -> subCraft.getHitBox().inBounds(trackedLocation.getAbsoluteLocation()) && subCraft.getHitBox().contains(trackedLocation.getAbsoluteLocation()), true);
         }
     }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onCraftRelease(@NotNull CraftReleaseEvent event) {
-        // --- RIMOZIONE DELLA BOSSBAR AL RILASCIO (Eseguito subito per qualsiasi tipo di rilascio) ---
-        final Craft craft = event.getCraft();
-        if (craft instanceof PilotedCraft pilotedCraft) {
-            Player player = pilotedCraft.getPilot();
-            if (player != null) {
-                BossBar bossBar = craftBossBars.remove(player.getUniqueId());
-                if (bossBar != null) {
-                    bossBar.removeAll();
-                }
-            }
-        }
 
         if (event.getReason() != CraftReleaseEvent.Reason.SUB_CRAFT) {
             return;
