@@ -15,10 +15,6 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.inventory.ItemStack;
 
-// Import corretti per la ActionBar compatibili con Spigot nativo
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -72,7 +68,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 continue;
             }
 
-            // Estrazione del nome mantenendo il case sensitive originale (Fighter / Bomber)
+            // Manteniamo Fighter e Bomber esattamente con il case-sensitive originale
             String craftName = pCraft.getType().getStringProperty(CraftType.NAME);
 
             // ==========================================
@@ -94,8 +90,11 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                         pCraft.setTickCooldown(calculatedCooldown);
 
                         double bps = (20.0 / calculatedCooldown) * 3.0;
-                        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, 
-                            new TextComponent("§e§lMANETTA: Gear " + targetGear + "/9 §7(" + String.format("%.1f", bps) + " Blocs/s)")
+                        String msg = "§e§lMANETTA: Gear " + targetGear + "/9 §7(" + String.format("%.1f", bps) + " Blocs/s)";
+                        
+                        // Alternativa nativa super-compatibile che non richiede import md_5/bungee
+                        player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
+                            net.md_5.bungee.api.chat.TextComponent.fromLegacyText(msg)
                         );
                     }
                 }
