@@ -14,6 +14,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,19 +76,36 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             // ==========================================
             if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
 
+                PlayerInventory inv = player.getInventory();
+                int currentSlot = inv.getHeldItemSlot();
+
+                // --- SISTEMAZIONE AUTOMATICA SICURA DELL'OROLOGIO ---
+                ItemStack handItem = inv.getItemInMainHand();
+                if (handItem == null || handItem.getType() != Material.CLOCK) {
+                    for (int i = 0; i < 36; i++) {
+                        ItemStack item = inv.getItem(i);
+                        if (item != null && item.getType() == Material.CLOCK) {
+                            inv.setItem(i, null); 
+                            inv.setItem(currentSlot, item); 
+                            break;
+                        }
+                    }
+                }
+
                 // --- 1. GESTIONE MANETTA (THROTTLE) ---
-                ItemStack mainHand = player.getInventory().getItemInMainHand();
-                if (mainHand != null && mainHand.getType() == Material.CLOCK) {
-                    int currentSlot = player.getInventory().getHeldItemSlot(); 
+                ItemStack activeHand = inv.getItemInMainHand();
+                if (activeHand != null && activeHand.getType() == Material.CLOCK) {
+                    
+                    // Slot 0 (inizio hotbar) -> Gear 1 (Minimo skip) | Slot 8 (fine hotbar) -> Gear 9 (Massimo skip)
                     int targetGear = currentSlot + 1; 
 
                     if (pCraft.getCurrentGear() != targetGear) {
                         pCraft.setCurrentGear(targetGear);
                         
-                        // Mappatura lineare sul testo: Slot 0 (Gear 1) = 30.0 Bps | Slot 8 (Gear 9) = 4.0 Bps
-                        double bps = 30.0 - ((double) currentSlot * (26.0 / 8.0));
+                        // Scala lineare della distanza calcolata sui blocchi percorsi ogni 3 secondi (timer fisso)
+                        double blocksPerThreeSeconds = 5.0 + ((double) currentSlot * (10.0 / 8.0));
                         
-                        String msg = "§e§lMANETTA: Gear " + targetGear + "/9 §7(" + String.format("%.1f", bps) + " Blocs/s)";
+                        String msg = "§e§lMANETTA: Gear " + targetGear + "/9 §7(" + String.format("%.1f", blocksPerThreeSeconds) + " Blocs/3s)";
                         
                         player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
                             net.md_5.bungee.api.chat.TextComponent.fromLegacyText(msg)
@@ -287,8 +305,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
             c.setCruiseDirection(initialDir);
             c.setCruising(true); 
-
-            net.countercraft.movecraft.listener.AircraftClockFollowerListener.moveClockToHand(p, p.getInventory().getHeldItemSlot());
         }
     }
 
