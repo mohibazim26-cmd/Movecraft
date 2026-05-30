@@ -4,6 +4,7 @@ import net.countercraft.movecraft.MovecraftLocation;
 import net.countercraft.movecraft.config.Settings;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
+import net.countercraft.movecraft.craft.PilotedCraft; // Aggiunto import
 import net.countercraft.movecraft.craft.SinkingCraft;
 import net.countercraft.movecraft.craft.datatag.CraftDataTagKey;
 import net.countercraft.movecraft.craft.datatag.CraftDataTagRegistry;
@@ -11,6 +12,7 @@ import net.countercraft.movecraft.craft.type.CraftType;
 import net.countercraft.movecraft.craft.type.RequiredBlockEntry;
 import net.countercraft.movecraft.features.status.events.CraftStatusUpdateEvent;
 import net.countercraft.movecraft.localisation.I18nSupport;
+import net.countercraft.movecraft.listener.CraftPilotListener; // Aggiunto import per mappare la BossBar
 import net.countercraft.movecraft.processing.WorldManager;
 import net.countercraft.movecraft.processing.effects.Effect;
 import net.countercraft.movecraft.util.Counter;
@@ -20,6 +22,9 @@ import net.kyori.adventure.sound.Sound;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.boss.BarColor; // Aggiunto import
+import org.bukkit.entity.Player; // Aggiunto import
+import org.bukkit.boss.BossBar; // Aggiunto import
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -97,7 +102,7 @@ public class StatusManager extends BukkitRunnable implements Listener {
             Counter<RequiredBlockEntry> moveblocks = new Counter<>();
             for(RequiredBlockEntry entry : craft.getType().getRequiredBlockProperty(CraftType.MOVE_BLOCKS)) {
                 moveblocks.add(entry, 0);
-            }                            
+            }                                           
             for(Material material : materials.getKeySet()) {
                 for(RequiredBlockEntry entry : craft.getType().getRequiredBlockProperty(CraftType.FLY_BLOCKS)) {
                     if(entry.contains(material)) {
@@ -136,11 +141,9 @@ public class StatusManager extends BukkitRunnable implements Listener {
         int nonNegligibleBlocks = craft.getDataTag(Craft.NON_NEGLIGIBLE_BLOCKS);
         int nonNegligibleSolidBlocks = craft.getDataTag(Craft.NON_NEGLIGIBLE_SOLID_BLOCKS);
 
-        // Build up counters of the fly and move blocks
         Counter<RequiredBlockEntry> flyBlocks = craft.getDataTag(Craft.FLYBLOCKS);
         Counter<RequiredBlockEntry> moveBlocks = craft.getDataTag(Craft.MOVEBLOCKS);
 
-        // now see if any of the resulting percentages are below the threshold specified in sinkPercent
         double sinkPercent = craft.getType().getDoubleProperty(CraftType.SINK_PERCENT) / 100.0;
         for (RequiredBlockEntry entry : flyBlocks.getKeySet()) {
             if(!entry.check(flyBlocks.get(entry), nonNegligibleBlocks, sinkPercent))
@@ -154,22 +157,65 @@ public class StatusManager extends BukkitRunnable implements Listener {
         }
 
         // And check the OverallSinkPercent
+        double percent;
+        if (craft.getType().getBoolProperty(CraftType.BLOCKED_BY_WATER)) {
+            percent = (double) nonNegligibleBlocks / (double) craft.getOrigBlockCount();
+        }
+        else {
+            percent = (double) nonNegligibleSolidBlocks / (double) craft.getOrigBlockCount();
+        }
+        
+        double currentIntegrityPercent = percent * 100.0;
+
         if (craft.getType().getDoubleProperty(CraftType.OVERALL_SINK_PERCENT) != 0.0) {
-            double percent;
-            if (craft.getType().getBoolProperty(CraftType.BLOCKED_BY_WATER)) {
-                percent = (double) nonNegligibleBlocks
-                        / (double) craft.getOrigBlockCount();
-            }
-            else {
-                percent = (double) nonNegligibleSolidBlocks
-                        / (double) craft.getOrigBlockCount();
-            }
-            if (percent * 100.0 < craft.getType().getDoubleProperty(CraftType.OVERALL_SINK_PERCENT))
+            if (currentIntegrityPercent < craft.getType().getDoubleProperty(CraftType.OVERALL_SINK_PERCENT))
                 sinking = true;
         }
 
         if (nonNegligibleBlocks == 0)
             sinking = true;
+
+        // --- AGGIORNAMENTO DINAMICO BOSSBAR IN BASE ALLE TUE PERCENTUALI ---
+        if (craft instanceof PilotedCraft pilotedCraft) {
+            Player player = pilotedCraft.getPilot();
+            if (player != null) {
+                BossBar bossBar = CraftPilotListener.craftBossBars.get(player.getUniqueId());
+                if (bossBar != null) {
+                    // Impostiamo il colore in base alle precise fasce richieste
+                    BarColor barColor;
+                    String integrityColor;
+                    
+                    if (currentIntegrityPercent >= 80.0) {
+                        barColor = BarColor.GREEN;
+                        integrityColor = "§a"; // Verde
+                    } else if (currentIntegrityPercent > 70.0 && currentIntegrityPercent < 80.0) {
+                        barColor = BarColor.YELLOW;
+                        integrityColor = "§e"; // Giallo
+                    } else {
+                        barColor = BarColor.RED;
+                        integrityColor = "§c"; // Rosso
+                    }
+
+                    bossBar.setColor(barColor);
+                    
+                    // Calcolo esatto del range di carburante usando la formula ufficiale di Movecraft
+                    double fuel = craft.getDataTag(Craft.FUEL);
+                    int cruiseSkipBlocks = (int) craft.getType().getPerWorldProperty(CraftType.PER_WORLD_CRUISE_SKIP_BLOCKS, craft.getWorld());
+                    cruiseSkipBlocks++;
+                    double fuelBurnRate = (double) craft.getType().getPerWorldProperty(CraftType.PER_WORLD_FUEL_BURN_RATE, craft.getWorld());
+                    int fuelRange = (int) Math.round((fuel * (1 + cruiseSkipBlocks)) / fuelBurnRate);
+
+                    // Imposta la percentuale visiva di riempimento della barra (da 0.0 a 1.0)
+                    bossBar.setProgress(Math.max(0.0, Math.min(1.0, currentIntegrityPercent / 100.0)));
+
+                    // Formattazione titolo: Integrità: (percentuale)% || Benzina: (autonomia blocchi)
+                    String title = String.format("%sIntegrità: %.1f%% §7|| §bBenzina: §f%d §bblocchi residui", 
+                            integrityColor, currentIntegrityPercent, fuelRange);
+                    bossBar.setTitle(title);
+                }
+            }
+        }
+        // -------------------------------------------------------------------
 
         // If the craft is disabled, play a sound and disable it.
         if (disabled && !craft.getDisabled()) {
@@ -182,6 +228,17 @@ public class StatusManager extends BukkitRunnable implements Listener {
             craft.getAudience().sendMessage(I18nSupport.getInternationalisedComponent("Player - Craft is sinking"));
             craft.setCruising(false);
             CraftManager.getInstance().sink(craft);
+            
+            // Pulizia BossBar se sta affondando
+            if (craft instanceof PilotedCraft pilotedCraft) {
+                Player player = pilotedCraft.getPilot();
+                if (player != null) {
+                    BossBar bossBar = CraftPilotListener.craftBossBars.remove(player.getUniqueId());
+                    if (bossBar != null) {
+                        bossBar.removeAll();
+                    }
+                }
+            }
         }
     }
 }
