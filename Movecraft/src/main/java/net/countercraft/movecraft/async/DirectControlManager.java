@@ -5,6 +5,7 @@ import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 import org.bukkit.event.EventHandler;
@@ -12,6 +13,9 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.inventory.ItemStack;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -40,8 +44,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             to.getZ() - pCraft.getPilotLockedZ()
         });
 
-        // Lock position but allow head rotation. Zero vertical velocity to prevent
-        // gravity accumulation causing the player to clip through the block below them.
         Vector vel = p.getVelocity();
         p.setVelocity(new Vector(vel.getX(), 0, vel.getZ()));
         event.setTo(new Location(to.getWorld(),
@@ -61,6 +63,30 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             }
             Player player = controlledCraft.getValue();
             PlayerCraft pCraft = (PlayerCraft)controlledCraft.getKey();
+
+            // ==========================================
+            // NUOVA LOGICA: MANETTA (THROTTLE) CON OROLOGIO
+            // ==========================================
+            String craftName = pCraft.getType().getStringProperty(net.countercraft.movecraft.craft.type.CraftType.NAME).toLowerCase();
+            if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
+                ItemStack mainHand = player.getInventory().getItemInMainHand();
+                if (mainHand != null && mainHand.getType() == Material.CLOCK) {
+                    int maxGearShifts = pCraft.getType().getIntProperty(net.countercraft.movecraft.craft.type.CraftType.GEAR_SHIFTS);
+                    if (maxGearShifts > 1) {
+                        int currentSlot = player.getInventory().getHeldItemSlot();
+                        // Mappatura lineare: Slot 0 (Hotbar 1) -> Marcia 1 | Slot 8 (Hotbar 9) -> Marcia Max
+                        int targetGear = (int) Math.round(((double) currentSlot / 8.0) * (maxGearShifts - 1)) + 1;
+                        
+                        if (pCraft.getCurrentGear() != targetGear) {
+                            pCraft.setCurrentGear(targetGear);
+                            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, 
+                                new TextComponent("§e§lMANETTA: §fGear " + targetGear + " / " + maxGearShifts + " §7(Slot " + (currentSlot + 1) + ")")
+                            );
+                        }
+                    }
+                }
+            }
+            // ==========================================
 
             double[] delta = pendingMovements.remove(player);
             double movedX, movedY, movedZ;
@@ -158,6 +184,25 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             sneakTimes.remove(oldPlayer);
         }
         playerToCraft.put(p, (PlayerCraft) c);
+
+        // ==========================================
+        // NUOVA LOGICA: AUTO-CRUISE CORRENTE AL DECOLLO (/dc)
+        // ==========================================
+        String craftName = c.getType().getStringProperty(net.countercraft.movecraft.craft.type.CraftType.NAME).toLowerCase();
+        if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
+            float yaw = p.getLocation().getYaw();
+            CruiseDirection initialDir = CruiseDirection.NORTH;
+            
+            if (yaw < 0) yaw += 360;
+            if (yaw >= 315 || yaw < 45) initialDir = CruiseDirection.SOUTH;
+            else if (yaw >= 45 && yaw < 135) initialDir = CruiseDirection.WEST;
+            else if (yaw >= 135 && yaw < 225) initialDir = CruiseDirection.NORTH;
+            else if (yaw >= 225 && yaw < 315) initialDir = CruiseDirection.EAST;
+
+            c.setCruiseDirection(initialDir);
+            c.setCruising(true); 
+        }
+        // ==========================================
     }
 
     public void removeControlledCraft(Craft c) {
