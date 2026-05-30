@@ -59,7 +59,7 @@ public class CraftPilotListener implements Listener {
                     oldBar.removeAll();
                 }
 
-                BossBar bossBar = Bukkit.createBossBar("§eIntegrità: §f100% §7|| §bBenzina: §fCalcolo...", BarColor.GREEN, BarStyle.SOLID);
+                BossBar bossBar = Bukkit.createBossBar("§eIntegrità: §fCalcolo... §7|| §bBenzina: §fCalcolo...", BarColor.GREEN, BarStyle.SOLID);
                 bossBar.addPlayer(player);
                 craftBossBars.put(player.getUniqueId(), bossBar);
             }
