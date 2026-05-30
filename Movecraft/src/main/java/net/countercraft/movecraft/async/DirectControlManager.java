@@ -99,10 +99,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                 }
 
-                // --- 2. GESTIONE AUTOCRUISE E SHIFT (SNEAK) ---
+                // --- 2. GESTIONE AUTOCRUISE E SHIFT CONTRO LO SPAM DI BASECRAFT ---
                 if (player.isSneaking()) {
                     if (pCraft.getCruising()) {
-                        pCraft.setCruising(false);
+                        pCraft.setCruising(false); // Eseguito solo UNA volta all'aggancio dello sneak
                     }
                     continue; 
                 } else {
@@ -116,7 +116,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                         else if (yaw >= 225 && yaw < 315) newDir = CruiseDirection.EAST;
 
                         pCraft.setCruiseDirection(newDir);
-                        pCraft.setCruising(true);
+                        pCraft.setCruising(true); // Eseguito solo UNA volta al rilascio dello sneak
                     }
                 }
 
