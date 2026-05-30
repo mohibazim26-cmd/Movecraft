@@ -9,6 +9,7 @@ import net.countercraft.movecraft.craft.SubCraft;
 import net.countercraft.movecraft.events.CraftPilotEvent;
 import net.countercraft.movecraft.events.CraftReleaseEvent;
 import net.countercraft.movecraft.util.hitboxes.HitBox;
+import org.bukkit.Bukkit; // Import corretto fissato qui
 import org.bukkit.NamespacedKey;
 import org.bukkit.Tag;
 import org.bukkit.block.Block;
@@ -16,7 +17,6 @@ import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
 import org.bukkit.boss.BossBar;
-import org.bukkit.boss.Bukkit;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.event.EventHandler;
