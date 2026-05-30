@@ -4,6 +4,7 @@ import com.google.common.base.Predicates;
 import net.countercraft.movecraft.MovecraftLocation;
 import net.countercraft.movecraft.TrackedLocation;
 import net.countercraft.movecraft.craft.Craft;
+import net.countercraft.movecraft.craft.PilotedCraft; // Aggiunto import
 import net.countercraft.movecraft.craft.SubCraft;
 import net.countercraft.movecraft.events.CraftPilotEvent;
 import net.countercraft.movecraft.events.CraftReleaseEvent;
@@ -13,6 +14,11 @@ import org.bukkit.Tag;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
+import org.bukkit.entity.Player; // Aggiunto import
+import org.bukkit.boss.BossBar; // Aggiunto import
+import org.bukkit.boss.Bukkit; // Aggiunto import
+import org.bukkit.boss.BarColor; // Aggiunto import
+import org.bukkit.boss.BarStyle; // Aggiunto import
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -22,6 +28,9 @@ import java.util.*;
 import java.util.function.Predicate;
 
 public class CraftPilotListener implements Listener {
+
+    // --- AGGIUNTA AGGANCIO BOSSBAR GLOBALE ---
+    public static final Map<UUID, BossBar> craftBossBars = new HashMap<>();
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCraftPilot(@NotNull CraftPilotEvent event) {
@@ -41,6 +50,21 @@ public class CraftPilotListener implements Listener {
             tile.update();
         }
 
+        // --- CREAZIONE DELLA BOSSBAR PER IL PILOTA ---
+        if (craft instanceof PilotedCraft pilotedCraft) {
+            Player player = pilotedCraft.getPilot();
+            if (player != null) {
+                BossBar oldBar = craftBossBars.remove(player.getUniqueId());
+                if (oldBar != null) {
+                    oldBar.removeAll();
+                }
+
+                BossBar bossBar = Bukkit.createBossBar("Integrità: 100% || Benzina: Calcolo...", BarColor.GREEN, BarStyle.SOLID);
+                bossBar.addPlayer(player);
+                craftBossBars.put(player.getUniqueId(), bossBar);
+            }
+        }
+
         // Tracked locations => Modify correctly with subcrafts
         if (craft instanceof SubCraft subCraft && subCraft.getParent() != null) {
             final Craft parent = subCraft.getParent();
@@ -53,6 +77,18 @@ public class CraftPilotListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCraftRelease(@NotNull CraftReleaseEvent event) {
+        // --- RIMOZIONE DELLA BOSSBAR AL RILASCIO (Eseguito subito per qualsiasi tipo di rilascio) ---
+        final Craft craft = event.getCraft();
+        if (craft instanceof PilotedCraft pilotedCraft) {
+            Player player = pilotedCraft.getPilot();
+            if (player != null) {
+                BossBar bossBar = craftBossBars.remove(player.getUniqueId());
+                if (bossBar != null) {
+                    bossBar.removeAll();
+                }
+            }
+        }
+
         if (event.getReason() != CraftReleaseEvent.Reason.SUB_CRAFT) {
             return;
         }
@@ -80,9 +116,9 @@ public class CraftPilotListener implements Listener {
     }
 
     /*
-    * Transfers TrackedLocations from a craft A to a craft B with a optional filter.
-    * This MOVES the tracked locations, so keep that in mind
-    */
+     * Transfers TrackedLocations from a craft A to a craft B with a optional filter.
+     * This MOVES the tracked locations, so keep that in mind
+     */
     private static void transferTrackedLocations(final Craft a, final Craft b, Predicate<TrackedLocation> filterArgument, boolean move) {
         final MovecraftLocation bMidPoint = b.getHitBox().getMidPoint();
 
@@ -94,12 +130,10 @@ public class CraftPilotListener implements Listener {
                 continue;
             }
 
-            // Commented out code: previous attempt to actually transfer the tracked locations, which technically is unnecessary unless for subcrafts like squadrons that actually move!
             List<TrackedLocation> transferred = new ArrayList<>();
             aTrackedLocations.forEach(trackedLocation -> {
                 if (filterArgument.test(trackedLocation)) {
                     if (move) {
-                        // Technically this (the reset call) is not necessary, but we will keep it here for potential extensions by third party addons
                         final MovecraftLocation absoluteLocation = trackedLocation.getAbsoluteLocation();
                         trackedLocation.reset(b, absoluteLocation);
                         if (!(bTrackedLocations.add(trackedLocation))) {
@@ -118,5 +152,4 @@ public class CraftPilotListener implements Listener {
             aTrackedLocations.removeAll(transferred);
         }
     }
-
 }
