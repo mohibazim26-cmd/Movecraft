@@ -189,7 +189,7 @@ public void addControlledCraft(Craft c, Player p) {
         // NUOVA LOGICA: AUTO-CRUISE CORRENTE AL DECOLLO (/dc)
         // ==========================================
         String craftName = c.getType().getStringProperty(net.countercraft.movecraft.craft.type.CraftType.NAME).toLowerCase();
-        if (craftName.contains("fighter") || craftName.contains("bomber")) {
+        if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
             float yaw = p.getLocation().getYaw();
             CruiseDirection initialDir = CruiseDirection.NORTH;
             
