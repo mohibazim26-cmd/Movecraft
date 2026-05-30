@@ -4,7 +4,7 @@ import com.google.common.base.Predicates;
 import net.countercraft.movecraft.MovecraftLocation;
 import net.countercraft.movecraft.TrackedLocation;
 import net.countercraft.movecraft.craft.Craft;
-import net.countercraft.movecraft.craft.PilotedCraft; // Aggiunto import
+import net.countercraft.movecraft.craft.PilotedCraft;
 import net.countercraft.movecraft.craft.SubCraft;
 import net.countercraft.movecraft.events.CraftPilotEvent;
 import net.countercraft.movecraft.events.CraftReleaseEvent;
@@ -14,11 +14,11 @@ import org.bukkit.Tag;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Sign;
-import org.bukkit.entity.Player; // Aggiunto import
-import org.bukkit.boss.BossBar; // Aggiunto import
-import org.bukkit.boss.Bukkit; // Aggiunto import
-import org.bukkit.boss.BarColor; // Aggiunto import
-import org.bukkit.boss.BarStyle; // Aggiunto import
+import org.bukkit.entity.Player;
+import org.bukkit.boss.BossBar;
+import org.bukkit.boss.Bukkit;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -29,7 +29,7 @@ import java.util.function.Predicate;
 
 public class CraftPilotListener implements Listener {
 
-    // --- AGGIUNTA AGGANCIO BOSSBAR GLOBALE ---
+    // Mappa statica globale per tracciare le barre dei piloti
     public static final Map<UUID, BossBar> craftBossBars = new HashMap<>();
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -50,7 +50,7 @@ public class CraftPilotListener implements Listener {
             tile.update();
         }
 
-        // --- CREAZIONE DELLA BOSSBAR PER IL PILOTA ---
+        // --- GESTIONE BOSSBAR: Inizializzazione all'avvio del pilotaggio ---
         if (craft instanceof PilotedCraft pilotedCraft) {
             Player player = pilotedCraft.getPilot();
             if (player != null) {
@@ -59,7 +59,7 @@ public class CraftPilotListener implements Listener {
                     oldBar.removeAll();
                 }
 
-                BossBar bossBar = Bukkit.createBossBar("Integrità: Calcolo... || Benzina: Calcolo...", BarColor.GREEN, BarStyle.SOLID);
+                BossBar bossBar = Bukkit.createBossBar("§eIntegrità: §f100% §7|| §bBenzina: §fCalcolo...", BarColor.GREEN, BarStyle.SOLID);
                 bossBar.addPlayer(player);
                 craftBossBars.put(player.getUniqueId(), bossBar);
             }
@@ -75,6 +75,8 @@ public class CraftPilotListener implements Listener {
         }
     }
 
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onCraftRelease(@NotNull CraftReleaseEvent event) {
         if (event.getReason() != CraftReleaseEvent.Reason.SUB_CRAFT) {
             return;
         }
