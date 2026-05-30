@@ -174,7 +174,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         toRemove.forEach(controlledCrafts::remove);
     }
 
-    public void addControlledCraft(Craft c, Player p) {
+public void addControlledCraft(Craft c, Player p) {
         Player oldPlayer = controlledCrafts.put(c, p);
         if (oldPlayer != null && !oldPlayer.equals(p)) {
             playerToCraft.remove(oldPlayer);
@@ -189,7 +189,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         // NUOVA LOGICA: AUTO-CRUISE CORRENTE AL DECOLLO (/dc)
         // ==========================================
         String craftName = c.getType().getStringProperty(net.countercraft.movecraft.craft.type.CraftType.NAME).toLowerCase();
-        if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
+        if (craftName.contains("fighter") || craftName.contains("bomber")) {
             float yaw = p.getLocation().getYaw();
             CruiseDirection initialDir = CruiseDirection.NORTH;
             
@@ -201,6 +201,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
             c.setCruiseDirection(initialDir);
             c.setCruising(true); 
+
+            // COLLEGARE IL LISTENER: Cerca l'orologio (es. nello slot 9) e lo mette subito in mano (es. slot 1)
+            net.countercraft.movecraft.listener.AircraftClockFollowerListener.moveClockToHand(p, p.getInventory().getHeldItemSlot());
         }
         // ==========================================
     }
