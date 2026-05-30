@@ -202,19 +202,28 @@ public final class InteractListener implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
+@EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
     public void onPlayerDropItem(@NotNull PlayerDropItemEvent e) {
-        if(e.getItemDrop().getItemStack().getType() == Material.COMPASS)
-        {
+        Material itemType = e.getItemDrop().getItemStack().getType();
+        
+        // CONTROLLO: Accetta sia la Bussola (Navi standard) che l'Orologio (Aerei)
+        if (itemType == Material.COMPASS || itemType == Material.CLOCK) {
             Craft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
             if (craft == null)
                 return;
 
+            // Se il giocatore usa l'Orologio, permettiamo la rotazione SOLO su Fighter e Bomber
+            if (itemType == Material.CLOCK) {
+                String craftName = craft.getType().getStringProperty(CraftType.NAME).toLowerCase();
+                if (!craftName.contains("fighter") && !craftName.contains("bomber")) {
+                    return; // Se non è un aereo, l'orologio non deve farlo girare
+                }
+            }
+
             droppedMap.put(e.getPlayer(), System.currentTimeMillis() + 1200);
 
-            MovecraftRotation rotation;
-            rotation = MovecraftRotation.ANTICLOCKWISE;
-            if(!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation())))
+            MovecraftRotation rotation = MovecraftRotation.ANTICLOCKWISE;
+            if (!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation())))
                 return;
 
             craft.rotate(rotation, craft.getHitBox().getMidPoint());
@@ -224,14 +233,24 @@ public final class InteractListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
     public void onPlayerSwapitem(@NotNull PlayerSwapHandItemsEvent e) {
-        if(e.getOffHandItem().getType() == Material.COMPASS)
-        {
+        Material itemType = e.getOffHandItem().getType();
+        
+        // CONTROLLO: Accetta sia la Bussola (Navi standard) che l'Orologio (Aerei)
+        if (itemType == Material.COMPASS || itemType == Material.CLOCK) {
             Craft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
             if (craft == null)
-                return;;
-            MovecraftRotation rotation;
-            rotation = MovecraftRotation.CLOCKWISE;
-            if(!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation())))
+                return;
+
+            // Se il giocatore usa l'Orologio, permettiamo la rotazione SOLO su Fighter e Bomber
+            if (itemType == Material.CLOCK) {
+                String craftName = craft.getType().getStringProperty(CraftType.NAME).toLowerCase();
+                if (!craftName.contains("fighter") && !craftName.contains("bomber")) {
+                    return; // Se non è un aereo, l'orologio non deve farlo girare
+                }
+            }
+
+            MovecraftRotation rotation = MovecraftRotation.CLOCKWISE;
+            if (!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation())))
                 return;
 
             craft.rotate(rotation, craft.getHitBox().getMidPoint());
