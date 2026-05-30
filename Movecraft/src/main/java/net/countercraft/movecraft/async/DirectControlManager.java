@@ -31,8 +31,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Player, Long> lastInputTime = new HashMap<>();
 
     // --- STRUTTURE DATI PER EFFETTO INERZIA/DERAPATA ---
-    private final Map<Craft, Vector;> currentVelocity = new HashMap<>();
-    private final Map<Craft, Double;> currentSpeedFactor = new HashMap<>();
+   private final Map<Craft, Vector> currentVelocity = new HashMap<>();
+   private final Map<Craft, Double> currentSpeedFactor = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerMove(PlayerMoveEvent event) {
