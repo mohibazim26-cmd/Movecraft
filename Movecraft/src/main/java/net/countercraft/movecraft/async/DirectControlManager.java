@@ -6,6 +6,7 @@ import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey; // Importato per gestire le proprietà del CraftType
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 import org.bukkit.event.EventHandler;
@@ -31,8 +32,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Player, Long> lastInputTime = new HashMap<>();
 
     // --- STRUTTURE DATI PER EFFETTO INERZIA/DERAPATA ---
-   private final Map<Craft, Vector> currentVelocity = new HashMap<>();
-   private final Map<Craft, Double> currentSpeedFactor = new HashMap<>();
+    private final Map<Craft, Vector> currentVelocity = new HashMap<>();
+    private final Map<Craft, Double> currentSpeedFactor = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -162,10 +163,17 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     else cooldowns.remove(pCraft);
                 }
 
-                // --- LETTURA COERENTE DELLO SKIP MARCE (Risolve l'errore del build) ---
+                // --- LETTURA COERENTE DELLO SKIP MARCE (Risolto l'errore del tipo convertendo in NamespacedKey) ---
                 int currentGear = pCraft.getCurrentGear();
                 String gearPropertyName = "cruiseSkipBlocksGear" + currentGear;
-                int maxAllowedSkip = pCraft.getType().getIntProperty(gearPropertyName);
+                
+                // Ricaviamo la chiave NamespacedKey in modo sicuro per Movecraft
+                NamespacedKey gearKey = NamespacedKey.fromString("movecraft:" + gearPropertyName.toLowerCase());
+                int maxAllowedSkip = 0;
+                if (gearKey != null) {
+                    maxAllowedSkip = pCraft.getType().getIntProperty(gearKey);
+                }
+                
                 if (maxAllowedSkip <= 0) {
                     maxAllowedSkip = currentGear; // Fallback matematico (Gear 1 = 1, Gear 2 = 2...)
                 }
@@ -213,7 +221,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 int dy = 0;
                 int dz = (int) Math.round(currentVelVec.getZ() * calculatedSpd);
 
-                // Lettura dell'input verticale manuale (Ascend/Descend diretto)
+                // Lettura dell'input verticale manuale (Ascend/Descend directo)
                 Location eyeLoc = player.getLocation();
                 Vector facingDir = eyeLoc.getDirection().setY(0).normalize();
                 Vector inputDir = new Vector(movedX, 0, movedZ);
@@ -229,7 +237,13 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 if (dx != 0 || dy != 0 || dz != 0) {
                     pCraft.translate(pCraft.getWorld(), dx, dy, dz);
                     
-                    long cooldownMs = pCraft.getType().getIntProperty(CraftType.TICK_COOLDOWN) * 50L;
+                    // Risolto l'errore di accesso privato cercando la proprietà tramite la stringa della chiave standard
+                    NamespacedKey cooldownKey = NamespacedKey.fromString("movecraft:tickcooldown");
+                    int tickCooldown = 20; // Default di sicurezza se non trovato
+                    if (cooldownKey != null) {
+                        tickCooldown = pCraft.getType().getIntProperty(cooldownKey);
+                    }
+                    long cooldownMs = tickCooldown * 50L;
                     cooldowns.put(pCraft, System.currentTimeMillis() + cooldownMs);
                 }
 
