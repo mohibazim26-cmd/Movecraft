@@ -6,6 +6,7 @@ import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
+import net.countercraft.movecraft.events.FuelBurnEvent;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.ChatColor;
@@ -30,6 +31,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private static final double AIRCRAFT_ACCEL_PER_IMPULSE = 1.5;
     private static final double AIRCRAFT_DECEL_PER_IMPULSE = 2.5;
     private static final double AIRCRAFT_OLD_VECTOR_WEIGHT = 0.55;
+    private static final double AIRCRAFT_FUEL_GEAR_ALPHA = 0.08;
+    private static final double AIRCRAFT_FUEL_GEAR_EXPONENT = 2.0;
     private static final double STANDARD_OLD_VECTOR_WEIGHT = 0.50;
     private static final double STANDARD_STOP_EPSILON = 0.03;
 
@@ -77,6 +80,17 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 to.getYaw(),
                 to.getPitch()
         ));
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL)
+    public void onFuelBurn(FuelBurnEvent event) {
+        Craft craft = event.getCraft();
+        if (!controlledCrafts.containsKey(craft) || !isCombatAircraft(craft) || event.getFuelBurnRate() <= 0) {
+            return;
+        }
+
+        int gear = clamp(craft.getCurrentGear(), 1, 9);
+        event.setFuelBurnRate(event.getFuelBurnRate() * fuelMultiplierForGear(gear));
     }
 
     @Override
@@ -405,6 +419,13 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         craft.setCruiseDirection(rotateCardinal(craft.getCruiseDirection(), rotation));
     }
 
+    public void rotateStandardCruiseDirection(Craft craft, MovecraftRotation rotation) {
+        if (isCombatAircraft(craft)) {
+            return;
+        }
+        craft.setCruiseDirection(rotateDirection(craft.getCruiseDirection(), rotation));
+    }
+
     public void pauseStandardDirectControlMovement(Craft craft, long millis) {
         if (isCombatAircraft(craft)) {
             return;
@@ -473,6 +494,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         double blocksPerSecond = AIRCRAFT_MIN_BLOCKS_PER_SECOND
                 + ((gear - 1) * (AIRCRAFT_MAX_BLOCKS_PER_SECOND - AIRCRAFT_MIN_BLOCKS_PER_SECOND) / 8.0);
         return blocksPerSecond / 2.0;
+    }
+
+    private static double fuelMultiplierForGear(int gear) {
+        return 1.0 + AIRCRAFT_FUEL_GEAR_ALPHA * Math.pow(Math.max(0, gear - 1), AIRCRAFT_FUEL_GEAR_EXPONENT);
     }
 
     private static void sendThrottleActionBar(Player player, double currentSkip, double targetSkip) {
@@ -599,6 +624,30 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 return clockwise ? CruiseDirection.WEST : CruiseDirection.EAST;
             case WEST:
                 return clockwise ? CruiseDirection.NORTH : CruiseDirection.SOUTH;
+            default:
+                return direction;
+        }
+    }
+
+    private static CruiseDirection rotateDirection(CruiseDirection direction, MovecraftRotation rotation) {
+        boolean clockwise = rotation == MovecraftRotation.CLOCKWISE;
+        switch (direction) {
+            case NORTH:
+                return clockwise ? CruiseDirection.EAST : CruiseDirection.WEST;
+            case NORTHEAST:
+                return clockwise ? CruiseDirection.SOUTHEAST : CruiseDirection.NORTHWEST;
+            case EAST:
+                return clockwise ? CruiseDirection.SOUTH : CruiseDirection.NORTH;
+            case SOUTHEAST:
+                return clockwise ? CruiseDirection.SOUTHWEST : CruiseDirection.NORTHEAST;
+            case SOUTH:
+                return clockwise ? CruiseDirection.WEST : CruiseDirection.EAST;
+            case SOUTHWEST:
+                return clockwise ? CruiseDirection.NORTHWEST : CruiseDirection.SOUTHEAST;
+            case WEST:
+                return clockwise ? CruiseDirection.NORTH : CruiseDirection.SOUTH;
+            case NORTHWEST:
+                return clockwise ? CruiseDirection.NORTHEAST : CruiseDirection.SOUTHWEST;
             default:
                 return direction;
         }
