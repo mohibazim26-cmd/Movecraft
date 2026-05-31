@@ -50,6 +50,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Craft, Vector> standardVelocity = new HashMap<>();
     private final Map<Craft, Vector> standardResidual = new HashMap<>();
     private final Map<Craft, Boolean> standardCruising = new HashMap<>();
+    private final Map<Craft, Long> standardPausedUntil = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -111,7 +112,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         lastSneakState.put(player, sneaking);
 
         if (sneaking) {
-            craft.setCruising(false);
+            if (craft.getCruising()) {
+                craft.setCruising(false);
+            }
             aircraftCurrentSkip.put(craft, 0.0);
             aircraftVelocity.put(craft, new Vector(0, 0, 0));
             aircraftResidual.put(craft, new Vector(0, 0, 0));
@@ -192,8 +195,6 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     private void runStandardDirectControl(PlayerCraft craft, Player player) {
-        craft.setCruising(false);
-
         double[] delta = pendingMovements.remove(player);
         double movedX;
         double movedY;
@@ -276,6 +277,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         } else if (sneakTimes.containsKey(player)) {
             if (System.currentTimeMillis() < sneakTimes.get(player)) {
                 shouldCruise = false;
+                craft.setCruising(false);
             }
             sneakTimes.remove(player);
         }
@@ -287,6 +289,14 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
         long now = System.currentTimeMillis();
         long impulseMs = getStandardImpulseMs(craft);
+        Long pausedUntil = standardPausedUntil.get(craft);
+        if (pausedUntil != null) {
+            if (now < pausedUntil) {
+                return;
+            }
+            standardPausedUntil.remove(craft);
+        }
+
         Long lastImpulse = standardLastImpulse.get(craft);
         if (lastImpulse != null && now - lastImpulse < impulseMs) {
             return;
@@ -348,17 +358,19 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         if (oldPlayer != null && !oldPlayer.equals(player)) {
             clearPlayerState(oldPlayer);
         }
-        playerToCraft.put(player, (PlayerCraft) craft);
+        PlayerCraft playerCraft = (PlayerCraft) craft;
+        playerToCraft.put(player, playerCraft);
 
         if (isCombatAircraft(craft)) {
-            craft.setCruiseDirection(cardinalDirectionFromYaw(player.getLocation().getYaw()));
-            craft.setCruising(false);
+            playerCraft.setCruiseDirection(cardinalDirectionFromYaw(player.getLocation().getYaw()));
+            if (playerCraft.getCruising()) {
+                playerCraft.setCruising(false);
+            }
             aircraftCurrentSkip.put(craft, 0.0);
             aircraftVelocity.put(craft, new Vector(0, 0, 0));
             aircraftResidual.put(craft, new Vector(0, 0, 0));
             aircraftLastImpulse.put(craft, 0L);
         } else {
-            craft.setCruising(false);
             standardCruising.put(craft, false);
             standardVelocity.put(craft, new Vector(0, 0, 0));
             standardResidual.put(craft, new Vector(0, 0, 0));
@@ -379,6 +391,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         standardVelocity.remove(craft);
         standardResidual.remove(craft);
         standardCruising.remove(craft);
+        standardPausedUntil.remove(craft);
     }
 
     public void addOrSetCooldown(Craft craft, Long endTime) {
@@ -390,6 +403,14 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             return;
         }
         craft.setCruiseDirection(rotateCardinal(craft.getCruiseDirection(), rotation));
+    }
+
+    public void pauseStandardDirectControlMovement(Craft craft, long millis) {
+        if (isCombatAircraft(craft)) {
+            return;
+        }
+        standardPausedUntil.put(craft, System.currentTimeMillis() + millis);
+        standardResidual.put(craft, new Vector(0, 0, 0));
     }
 
     private void clearPlayerState(Player player) {
