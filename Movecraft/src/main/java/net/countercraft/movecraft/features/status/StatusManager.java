@@ -209,7 +209,7 @@ public class StatusManager extends BukkitRunnable implements Listener {
                     bossBar.setProgress(Math.max(0.0, Math.min(1.0, currentIntegrityPercent / 100.0)));
 
                     // Formattazione titolo: Integrità: (percentuale)% || Benzina: (autonomia blocchi)
-                    String title = String.format("%sIntegrità: %.1f%% §7|| §bBenzina: §f%d §bblocchi residui", 
+                    String title = String.format("%sIntegrità: %.1f%% §7|| §fBenzina: §f%d §fblocchi", 
                             integrityColor, currentIntegrityPercent, fuelRange);
                     bossBar.setTitle(title);
                 }
