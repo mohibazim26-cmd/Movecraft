@@ -26,11 +26,7 @@ import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
 import net.countercraft.movecraft.localisation.I18nSupport;
 import net.countercraft.movecraft.util.MathUtils;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.data.type.Switch;
@@ -208,13 +204,6 @@ public final class InteractListener implements Listener {
 
         int gear = newSlot + 1;
         craft.setCurrentGear(gear);
-
-        double blocksPerSecond = 4.0 + ((gear - 1) * 26.0 / 8.0);
-        player.spigot().sendMessage(
-                ChatMessageType.ACTION_BAR,
-                new TextComponent(ChatColor.YELLOW + "Throttle " + gear + "/9 "
-                        + ChatColor.GRAY + String.format("(%.1f blocks/s)", blocksPerSecond))
-        );
     }
 
     @EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
@@ -306,9 +295,5 @@ public final class InteractListener implements Listener {
         }
 
         Movecraft.getInstance().getDirectControlManager().rotateAircraftCruiseDirection(craft, rotation);
-
-        Location location = player.getLocation();
-        location.setYaw(location.getYaw() + (rotation == MovecraftRotation.CLOCKWISE ? 90 : -90));
-        player.teleport(location);
     }
 }
