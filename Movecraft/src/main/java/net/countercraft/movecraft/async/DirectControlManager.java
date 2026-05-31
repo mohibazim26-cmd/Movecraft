@@ -135,7 +135,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 float yaw = player.getLocation().getYaw();
                 CruiseDirection cruiseDir = pCraft.getCruiseDirection();
                 
-                // Ricalcola la direzione cardinale fissa basata sullo sguardo (solo se non si è in Shift)
+                // Ricalcola la direzione cardinale fissa basata sullo sguardo
                 CruiseDirection newDir = CruiseDirection.NORTH;
                 if (yaw < 0) yaw += 360;
                 if (yaw >= 315 || yaw < 45) newDir = CruiseDirection.SOUTH;
@@ -151,7 +151,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
                 // LETTURA DELL'INPUT WASD DAL PLAYER_MOVE_EVENT
                 double[] delta = pendingMovements.remove(player);
-                double movedX = 0, movedY = 0, movedZ = 0;
+                double movedX = 0, movedY = 0;
 
                 if (delta != null && (Math.abs(delta[0]) > 0.01 || Math.abs(delta[1]) > 0.01 || Math.abs(delta[2]) > 0.01)) {
                     movedX = delta[0];
@@ -194,7 +194,11 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 Vector currentVelVec = currentVelocity.getOrDefault(pCraft, targetDirectionVector.clone());
                 double speedFactor = currentSpeedFactor.getOrDefault(pCraft, 0.0);
 
-                double angleDifference = currentVelVec.angle(targetDirectionVector);
+                double angleDifference = 0.0;
+                if (currentVelVec.lengthSquared() > 0 && targetDirectionVector.lengthSquared() > 0) {
+                    angleDifference = currentVelVec.angle(targetDirectionVector);
+                }
+                
                 if (angleDifference > 0.1) {
                     speedFactor = Math.max(0.3, speedFactor * 0.6); // Derapata: perde velocità virando
                 } else {
@@ -233,32 +237,29 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 }
 
                 int dy = 0;
-                // REGOLA CCNet: W = Scende diagonalmente (-1 Y)
+                // REGOLA CCNet VETTORIALE: W = Scende (-1 Y), S = Sale (+1 Y)
                 if (movingForward) dy = -1;
-                // REGOLA CCNet: S = Sale diagonalmente (+1 Y)
                 if (movingBackward) dy = 1;
 
-                // Calcolo della spinta base lungo la traiettoria d'inerzia
+                // Calcolo della spinta base lungo la traiettoria d'inerzia (Avanzamento automatico costante)
                 double targetDx = currentVelVec.getX() * finalSpeedPerMovement;
                 double targetDz = currentVelVec.getZ() * finalSpeedPerMovement;
 
-                // Vettori di sbandamento laterale (A / D) relativi alla rotta cardinale
-                int strafeX = 0, strafeZ = 0;
+                // Vettori di sbandamento laterale (A / D) relativi alla rotta cardinale fissa
+                int strafeX = 0;
                 int forwardZ = (int) targetDirectionVector.getZ();
                 int forwardX = (int) targetDirectionVector.getX();
                 if (cruiseDir == CruiseDirection.NORTH) { strafeX = -1; }
                 else if (cruiseDir == CruiseDirection.SOUTH) { strafeX = 1; }
-                else if (cruiseDir == CruiseDirection.EAST) { strafeZ = -1; }
-                else if (cruiseDir == CruiseDirection.WEST) { strafeZ = 1; }
 
-                // REGOLA CCNet: A o D muovono l'aereo diagonalmente rispetto alla rotta cardinale
+                // REGOLA CCNet: A o D muovono l'aereo diagonalmente rispetto alla rotta cardinale fissa
                 if (strafeLeft) {
-                    targetDx += strafeX * finalSpeedPerMovement;
-                    targetDz += (cruiseDir == CruiseDirection.NORTH || cruiseDir == CruiseDirection.SOUTH ? -forwardZ : forwardX) * finalSpeedPerMovement;
+                    targetDx += (cruiseDir == CruiseDirection.NORTH || cruiseDir == CruiseDirection.SOUTH ? strafeX * finalSpeedPerMovement : 0);
+                    targetDz += (cruiseDir == CruiseDirection.NORTH || cruiseDir == CruiseDirection.SOUTH ? -forwardZ * finalSpeedPerMovement : forwardX * finalSpeedPerMovement);
                 }
                 if (strafeRight) {
-                    targetDx -= strafeX * finalSpeedPerMovement;
-                    targetDz -= (cruiseDir == CruiseDirection.NORTH || cruiseDir == CruiseDirection.SOUTH ? -forwardZ : forwardX) * finalSpeedPerMovement;
+                    targetDx -= (cruiseDir == CruiseDirection.NORTH || cruiseDir == CruiseDirection.SOUTH ? strafeX * finalSpeedPerMovement : 0);
+                    targetDz -= (cruiseDir == CruiseDirection.NORTH || cruiseDir == CruiseDirection.SOUTH ? -forwardZ * finalSpeedPerMovement : forwardX * finalSpeedPerMovement);
                 }
 
                 // GESTIONE DEI RESIDUI DECIMALI PER LE MARCE DISPARI
@@ -292,8 +293,18 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
                 double[] delta = pendingMovements.remove(player);
                 double movedX = 0, movedY = 0, movedZ = 0;
-                if (delta != null) {
+                if (delta != null && (Math.abs(delta[0]) > 0.05 || Math.abs(delta[1]) > 0.05 || Math.abs(delta[2]) > 0.05)) {
                     movedX = delta[0]; movedY = delta[1]; movedZ = delta[2];
+                    lastInput.put(player, delta);
+                    lastInputTime.put(player, System.currentTimeMillis());
+                } else {
+                    Long t = lastInputTime.get(player);
+                    double[] last = lastInput.get(player);
+                    if (last != null && t != null && System.currentTimeMillis() - t < 150) {
+                        movedX = last[0]; movedY = last[1]; movedZ = last[2];
+                    } else {
+                        lastInput.remove(player); lastInputTime.remove(player);
+                    }
                 }
 
                 CruiseDirection xDir = CruiseDirection.NONE;
@@ -317,4 +328,73 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                         else cd = CruiseDirection.SOUTHWEST;
                     }
                 } else if (xDir != CruiseDirection.NONE) cd = xDir;
-                else if (zDir != CruiseDirection.NONE) cd = zDir
+                else if (zDir != CruiseDirection.NONE) cd = zDir;
+
+                if (movedY > 0.15) cd = CruiseDirection.UP;
+
+                if (player.isSneaking()) {
+                    if (!sneakTimes.containsKey(player))
+                        sneakTimes.put(player, System.currentTimeMillis() + 250);
+                    else if (sneakTimes.containsKey(player) && System.currentTimeMillis() > sneakTimes.get(player)) {
+                        cd = CruiseDirection.DOWN;
+                        if (!pCraft.getCruising()) pCraft.setCruising(true);
+                    }
+                } else {
+                    if (sneakTimes.containsKey(player)) {
+                        if (System.currentTimeMillis() < sneakTimes.get(player)) {
+                            pCraft.setCruising(false);
+                        }
+                        sneakTimes.remove(player);
+                    }
+                }
+
+                if (cd != pCraft.getCruiseDirection())
+                    pCraft.setCruiseDirection(cd);
+            }
+        }
+        toRemove.forEach(controlledCrafts::remove);
+    }
+
+    public void addControlledCraft(Craft c, Player p) {
+        Player oldPlayer = controlledCrafts.put(c, p);
+        if (oldPlayer != null && !oldPlayer.equals(p)) {
+            playerToCraft.remove(oldPlayer);
+            pendingMovements.remove(oldPlayer);
+            lastInput.remove(oldPlayer);
+            lastInputTime.remove(oldPlayer);
+            sneakTimes.remove(oldPlayer);
+        }
+        playerToCraft.put(p, (PlayerCraft) c);
+
+        String craftName = c.getType().getStringProperty(CraftType.NAME);
+        if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
+            float yaw = p.getLocation().getYaw();
+            CruiseDirection initialDir = CruiseDirection.NORTH;
+            
+            if (yaw < 0) yaw += 360;
+            if (yaw >= 315 || yaw < 45) initialDir = CruiseDirection.SOUTH;
+            else if (yaw >= 45 && yaw < 135) initialDir = CruiseDirection.WEST;
+            else if (yaw >= 135 && yaw < 225) initialDir = CruiseDirection.NORTH;
+            else if (yaw >= 225 && yaw < 315) initialDir = CruiseDirection.EAST;
+
+            c.setCruiseDirection(initialDir);
+            c.setCruising(true); 
+        }
+    }
+
+    public void removeControlledCraft(Craft c) {
+        Player p = controlledCrafts.remove(c);
+        if (p != null) {
+            playerToCraft.remove(p);
+            pendingMovements.remove(p);
+            lastInput.remove(p);
+            lastInputTime.remove(p);
+            sneakTimes.remove(p);
+            currentVelocity.remove(c);
+            currentSpeedFactor.remove(c);
+            residualMovements.remove(c);
+        }
+    }
+
+    public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
+}
