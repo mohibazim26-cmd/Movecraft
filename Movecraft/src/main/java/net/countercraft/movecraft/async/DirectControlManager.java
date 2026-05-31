@@ -6,6 +6,9 @@ import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -134,6 +137,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         double currentSkip = aircraftCurrentSkip.getOrDefault(craft, 0.0);
         currentSkip = approach(currentSkip, targetSkip, AIRCRAFT_ACCEL_PER_IMPULSE, AIRCRAFT_DECEL_PER_IMPULSE);
         aircraftCurrentSkip.put(craft, currentSkip);
+        sendThrottleActionBar(player, currentSkip, targetSkip);
 
         Vector targetVelocity = forward.clone().multiply(currentSkip);
         Vector left = leftOf(forward);
@@ -372,6 +376,25 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         double blocksPerSecond = AIRCRAFT_MIN_BLOCKS_PER_SECOND
                 + ((gear - 1) * (AIRCRAFT_MAX_BLOCKS_PER_SECOND - AIRCRAFT_MIN_BLOCKS_PER_SECOND) / 8.0);
         return blocksPerSecond / 2.0;
+    }
+
+    private static void sendThrottleActionBar(Player player, double currentSkip, double targetSkip) {
+        double currentBlocksPerSecond = Math.max(0.0, currentSkip * 2.0);
+        double targetBlocksPerSecond = Math.max(0.1, targetSkip * 2.0);
+        double percent = currentBlocksPerSecond / targetBlocksPerSecond;
+
+        ChatColor speedColor;
+        if (percent <= 0.40) {
+            speedColor = ChatColor.RED;
+        } else if (percent < 0.70) {
+            speedColor = ChatColor.YELLOW;
+        } else {
+            speedColor = ChatColor.GREEN;
+        }
+
+        String message = ChatColor.YELLOW.toString() + ChatColor.BOLD + "Manetta: "
+                + speedColor + String.format("%.1f blocchi/s", currentBlocksPerSecond);
+        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(message));
     }
 
     private static double approach(double current, double target, double accelStep, double decelStep) {
