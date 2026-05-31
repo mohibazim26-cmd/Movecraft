@@ -187,7 +187,7 @@ public final class InteractListener implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void onAircraftThrottleScroll(@NotNull PlayerItemHeldEvent e) {
         Player player = e.getPlayer();
-        Craft craft = CraftManager.getInstance().getCraftByPlayer(player);
+        PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(player);
         if (craft == null || !craft.getPilotLocked() || !isCombatAircraft(craft)) {
             return;
         }
