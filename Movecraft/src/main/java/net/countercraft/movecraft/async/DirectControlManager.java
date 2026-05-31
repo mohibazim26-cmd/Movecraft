@@ -1,17 +1,19 @@
 package net.countercraft.movecraft.async;
 
 import net.countercraft.movecraft.CruiseDirection;
+import net.countercraft.movecraft.Movecraft;
+import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
-import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
+import net.countercraft.movecraft.craft.type.CraftType;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
-import org.bukkit.util.Vector;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,6 +21,13 @@ import java.util.List;
 import java.util.Map;
 
 public class DirectControlManager extends BukkitRunnable implements Listener {
+    private static final long AIRCRAFT_IMPULSE_MS = 500L;
+    private static final double AIRCRAFT_MIN_BLOCKS_PER_SECOND = 4.0;
+    private static final double AIRCRAFT_MAX_BLOCKS_PER_SECOND = 30.0;
+    private static final double AIRCRAFT_ACCEL_PER_IMPULSE = 1.5;
+    private static final double AIRCRAFT_DECEL_PER_IMPULSE = 2.5;
+    private static final double AIRCRAFT_OLD_VECTOR_WEIGHT = 0.55;
+
     private final Map<Craft, Player> controlledCrafts = new HashMap<>();
     private final Map<Player, PlayerCraft> playerToCraft = new HashMap<>();
     private final Map<Craft, Long> cooldowns = new HashMap<>();
@@ -27,149 +36,423 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Player, double[]> lastInput = new HashMap<>();
     private final Map<Player, Long> lastInputTime = new HashMap<>();
 
+    private final Map<Craft, Long> aircraftLastImpulse = new HashMap<>();
+    private final Map<Craft, Double> aircraftCurrentSkip = new HashMap<>();
+    private final Map<Craft, Vector> aircraftVelocity = new HashMap<>();
+    private final Map<Craft, Vector> aircraftResidual = new HashMap<>();
+    private final Map<Player, Boolean> lastSneakState = new HashMap<>();
+
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerMove(PlayerMoveEvent event) {
-        Player p = event.getPlayer();
-        PlayerCraft pCraft = playerToCraft.get(p);
-        if (pCraft == null) return;
+        Player player = event.getPlayer();
+        PlayerCraft craft = playerToCraft.get(player);
+        if (craft == null) {
+            return;
+        }
 
         Location to = event.getTo();
-        pendingMovements.put(p, new double[]{
-            to.getX() - pCraft.getPilotLockedX(),
-            to.getY() - pCraft.getPilotLockedY(),
-            to.getZ() - pCraft.getPilotLockedZ()
+        pendingMovements.put(player, new double[] {
+                to.getX() - craft.getPilotLockedX(),
+                to.getY() - craft.getPilotLockedY(),
+                to.getZ() - craft.getPilotLockedZ()
         });
 
-        // Lock position but allow head rotation. Zero vertical velocity to prevent
-        // gravity accumulation causing the player to clip through the block below them.
-        Vector vel = p.getVelocity();
-        p.setVelocity(new Vector(vel.getX(), 0, vel.getZ()));
-        event.setTo(new Location(to.getWorld(),
-            pCraft.getPilotLockedX(), pCraft.getPilotLockedY(), pCraft.getPilotLockedZ(),
-            to.getYaw(), to.getPitch()));
+        Vector velocity = player.getVelocity();
+        player.setVelocity(new Vector(velocity.getX(), 0, velocity.getZ()));
+        event.setTo(new Location(
+                to.getWorld(),
+                craft.getPilotLockedX(),
+                craft.getPilotLockedY(),
+                craft.getPilotLockedZ(),
+                to.getYaw(),
+                to.getPitch()
+        ));
     }
 
     @Override
     public void run() {
-        if (controlledCrafts.isEmpty()) return;
+        if (controlledCrafts.isEmpty()) {
+            return;
+        }
+
         List<Craft> toRemove = new ArrayList<>();
-        for (Map.Entry<Craft, Player> controlledCraft : controlledCrafts.entrySet())
-        {
-            if(controlledCraft.getKey() == null || controlledCraft.getValue() == null) {
-                toRemove.add(controlledCraft.getKey());
+        for (Map.Entry<Craft, Player> entry : controlledCrafts.entrySet()) {
+            Craft craft = entry.getKey();
+            Player player = entry.getValue();
+            if (!(craft instanceof PlayerCraft) || player == null) {
+                toRemove.add(craft);
                 continue;
             }
-            Player player = controlledCraft.getValue();
-            PlayerCraft pCraft = (PlayerCraft)controlledCraft.getKey();
 
-            double[] delta = pendingMovements.remove(player);
-            double movedX, movedY, movedZ;
-            if (delta != null && (Math.abs(delta[0]) > 0.05 || Math.abs(delta[1]) > 0.05 || Math.abs(delta[2]) > 0.05)) {
-                movedX = delta[0];
-                movedY = delta[1];
-                movedZ = delta[2];
-                lastInput.put(player, delta);
-                lastInputTime.put(player, System.currentTimeMillis());
+            PlayerCraft playerCraft = (PlayerCraft) craft;
+            if (isCombatAircraft(playerCraft)) {
+                runCombatAircraft(playerCraft, player);
             } else {
-                Long t = lastInputTime.get(player);
-                double[] last = lastInput.get(player);
-                if (last != null && t != null && System.currentTimeMillis() - t < 150) {
-                    movedX = last[0];
-                    movedY = last[1];
-                    movedZ = last[2];
-                } else {
-                    movedX = 0;
-                    movedY = 0;
-                    movedZ = 0;
-                    lastInput.remove(player);
-                    lastInputTime.remove(player);
-                }
+                runStandardDirectControl(playerCraft, player);
             }
-
-            if(cooldowns.containsKey(pCraft))
-            {
-                if(cooldowns.get(pCraft) > System.currentTimeMillis()) continue;
-                else cooldowns.remove(pCraft);
-            }
-            CruiseDirection xDir = CruiseDirection.NONE;
-            CruiseDirection zDir = CruiseDirection.NONE;
-
-            if (movedX > 0.05)
-                xDir = CruiseDirection.EAST;
-            else if (movedX < -0.05)
-                xDir = CruiseDirection.WEST;
-            if (movedZ > 0.05)
-                zDir = CruiseDirection.SOUTH;
-            else if (movedZ < -0.05)
-                zDir = CruiseDirection.NORTH;
-
-            if(Math.abs(movedX) > 0 && !pCraft.getCruising()|| Math.abs(movedZ) > 0 && !pCraft.getCruising() || movedY > 0 && !pCraft.getCruising())
-                pCraft.setCruising(true);
-
-            CruiseDirection cd = pCraft.getCruiseDirection();
-            if(xDir != CruiseDirection.NONE && zDir != CruiseDirection.NONE)
-            {
-                if (xDir == CruiseDirection.EAST)
-                {
-                    if (zDir == CruiseDirection.NORTH) cd = CruiseDirection.NORTHEAST;
-                    else cd = CruiseDirection.SOUTHEAST;
-                }
-                else
-                {
-                    if (zDir == CruiseDirection.NORTH) cd = CruiseDirection.NORTHWEST;
-                    else cd = CruiseDirection.SOUTHWEST;
-                }
-            }
-            else if (xDir != CruiseDirection.NONE) cd = xDir;
-            else if (zDir != CruiseDirection.NONE) cd = zDir;
-
-            if(movedY > 0.15) cd = CruiseDirection.UP;
-
-            if(player.isSneaking()) {
-                if(!sneakTimes.containsKey(player))
-                    sneakTimes.put(player, System.currentTimeMillis() + 250);
-                else if(sneakTimes.containsKey(player) && System.currentTimeMillis() > sneakTimes.get(player)){
-                    cd = CruiseDirection.DOWN;
-                    if(!pCraft.getCruising()) pCraft.setCruising(true);
-                }
-            }
-            else {
-                if(sneakTimes.containsKey(player)) {
-                    if(System.currentTimeMillis() < sneakTimes.get(player)) {
-                        pCraft.setCruising(false);
-                    }
-                    sneakTimes.remove(player);
-                }
-            }
-
-            if (cd != pCraft.getCruiseDirection())
-                pCraft.setCruiseDirection(cd);
         }
-        toRemove.forEach(controlledCrafts::remove);
+
+        toRemove.forEach(this::removeControlledCraft);
     }
 
-    public void addControlledCraft(Craft c, Player p) {
-        Player oldPlayer = controlledCrafts.put(c, p);
-        if (oldPlayer != null && !oldPlayer.equals(p)) {
-            playerToCraft.remove(oldPlayer);
-            pendingMovements.remove(oldPlayer);
-            lastInput.remove(oldPlayer);
-            lastInputTime.remove(oldPlayer);
-            sneakTimes.remove(oldPlayer);
+    private void runCombatAircraft(PlayerCraft craft, Player player) {
+        long now = System.currentTimeMillis();
+        boolean sneaking = player.isSneaking();
+        boolean wasSneaking = lastSneakState.getOrDefault(player, false);
+        lastSneakState.put(player, sneaking);
+
+        if (sneaking) {
+            craft.setCruising(false);
+            aircraftCurrentSkip.put(craft, 0.0);
+            aircraftVelocity.put(craft, new Vector(0, 0, 0));
+            aircraftResidual.put(craft, new Vector(0, 0, 0));
+            aircraftLastImpulse.put(craft, now);
+            pendingMovements.remove(player);
+            return;
         }
-        playerToCraft.put(p, (PlayerCraft) c);
+
+        if (wasSneaking) {
+            craft.setCruiseDirection(cardinalDirectionFromYaw(player.getLocation().getYaw()));
+        }
+
+        Long lastImpulse = aircraftLastImpulse.get(craft);
+        if (lastImpulse != null && now - lastImpulse < AIRCRAFT_IMPULSE_MS) {
+            return;
+        }
+        aircraftLastImpulse.put(craft, now);
+
+        InputState input = readInput(player);
+        CruiseDirection cruiseDirection = craft.getCruiseDirection();
+        Vector forward = directionToVector(cruiseDirection);
+        if (forward.lengthSquared() == 0) {
+            forward = directionToVector(cardinalDirectionFromYaw(player.getLocation().getYaw()));
+            craft.setCruiseDirection(cardinalDirectionFromYaw(player.getLocation().getYaw()));
+        }
+
+        int gear = clamp(craft.getCurrentGear(), 1, 9);
+        double targetSkip = blocksPerImpulseForGear(gear);
+        double currentSkip = aircraftCurrentSkip.getOrDefault(craft, 0.0);
+        currentSkip = approach(currentSkip, targetSkip, AIRCRAFT_ACCEL_PER_IMPULSE, AIRCRAFT_DECEL_PER_IMPULSE);
+        aircraftCurrentSkip.put(craft, currentSkip);
+
+        Vector targetVelocity = forward.clone().multiply(currentSkip);
+        Vector left = leftOf(forward);
+        if (input.strafeLeft) {
+            targetVelocity.add(left.clone().multiply(currentSkip));
+        }
+        if (input.strafeRight) {
+            targetVelocity.subtract(left.clone().multiply(currentSkip));
+        }
+        if (input.forward) {
+            targetVelocity.setY(targetVelocity.getY() - currentSkip);
+        }
+        if (input.backward) {
+            targetVelocity.setY(targetVelocity.getY() + currentSkip);
+        }
+
+        Vector currentVelocity = aircraftVelocity.getOrDefault(craft, new Vector(0, 0, 0));
+        currentVelocity.multiply(AIRCRAFT_OLD_VECTOR_WEIGHT)
+                .add(targetVelocity.clone().multiply(1.0 - AIRCRAFT_OLD_VECTOR_WEIGHT));
+        aircraftVelocity.put(craft, currentVelocity.clone());
+
+        Vector residual = aircraftResidual.getOrDefault(craft, new Vector(0, 0, 0));
+        double preciseX = currentVelocity.getX() + residual.getX();
+        double preciseY = currentVelocity.getY() + residual.getY();
+        double preciseZ = currentVelocity.getZ() + residual.getZ();
+
+        int dx = truncateTowardZero(preciseX);
+        int dy = truncateTowardZero(preciseY);
+        int dz = truncateTowardZero(preciseZ);
+
+        residual.setX(preciseX - dx);
+        residual.setY(preciseY - dy);
+        residual.setZ(preciseZ - dz);
+        aircraftResidual.put(craft, residual);
+
+        if (dx == 0 && dy == 0 && dz == 0) {
+            return;
+        }
+
+        craft.setLastCruiseUpdate(now);
+        Movecraft.getInstance().getServer().getScheduler().runTask(Movecraft.getInstance(), () -> {
+            if (controlledCrafts.containsKey(craft) && craft.getPilotLocked()) {
+                craft.translate(craft.getWorld(), dx, dy, dz);
+            }
+        });
     }
 
-    public void removeControlledCraft(Craft c) {
-        Player p = controlledCrafts.remove(c);
-        if (p != null) {
-            playerToCraft.remove(p);
-            pendingMovements.remove(p);
-            lastInput.remove(p);
-            lastInputTime.remove(p);
-            sneakTimes.remove(p);
+    private void runStandardDirectControl(PlayerCraft craft, Player player) {
+        double[] delta = pendingMovements.remove(player);
+        double movedX;
+        double movedY;
+        double movedZ;
+
+        if (delta != null && (Math.abs(delta[0]) > 0.05 || Math.abs(delta[1]) > 0.05 || Math.abs(delta[2]) > 0.05)) {
+            movedX = delta[0];
+            movedY = delta[1];
+            movedZ = delta[2];
+            lastInput.put(player, delta);
+            lastInputTime.put(player, System.currentTimeMillis());
+        } else {
+            Long inputTime = lastInputTime.get(player);
+            double[] last = lastInput.get(player);
+            if (last != null && inputTime != null && System.currentTimeMillis() - inputTime < 150) {
+                movedX = last[0];
+                movedY = last[1];
+                movedZ = last[2];
+            } else {
+                movedX = 0;
+                movedY = 0;
+                movedZ = 0;
+                lastInput.remove(player);
+                lastInputTime.remove(player);
+            }
+        }
+
+        Long cooldown = cooldowns.get(craft);
+        if (cooldown != null) {
+            if (cooldown > System.currentTimeMillis()) {
+                return;
+            }
+            cooldowns.remove(craft);
+        }
+
+        CruiseDirection xDirection = CruiseDirection.NONE;
+        CruiseDirection zDirection = CruiseDirection.NONE;
+
+        if (movedX > 0.05) {
+            xDirection = CruiseDirection.EAST;
+        } else if (movedX < -0.05) {
+            xDirection = CruiseDirection.WEST;
+        }
+        if (movedZ > 0.05) {
+            zDirection = CruiseDirection.SOUTH;
+        } else if (movedZ < -0.05) {
+            zDirection = CruiseDirection.NORTH;
+        }
+
+        if ((Math.abs(movedX) > 0 || Math.abs(movedZ) > 0 || movedY > 0) && !craft.getCruising()) {
+            craft.setCruising(true);
+        }
+
+        CruiseDirection direction = craft.getCruiseDirection();
+        if (xDirection != CruiseDirection.NONE && zDirection != CruiseDirection.NONE) {
+            if (xDirection == CruiseDirection.EAST) {
+                direction = zDirection == CruiseDirection.NORTH ? CruiseDirection.NORTHEAST : CruiseDirection.SOUTHEAST;
+            } else {
+                direction = zDirection == CruiseDirection.NORTH ? CruiseDirection.NORTHWEST : CruiseDirection.SOUTHWEST;
+            }
+        } else if (xDirection != CruiseDirection.NONE) {
+            direction = xDirection;
+        } else if (zDirection != CruiseDirection.NONE) {
+            direction = zDirection;
+        }
+
+        if (movedY > 0.15) {
+            direction = CruiseDirection.UP;
+        }
+
+        if (player.isSneaking()) {
+            if (!sneakTimes.containsKey(player)) {
+                sneakTimes.put(player, System.currentTimeMillis() + 250);
+            } else if (System.currentTimeMillis() > sneakTimes.get(player)) {
+                direction = CruiseDirection.DOWN;
+                if (!craft.getCruising()) {
+                    craft.setCruising(true);
+                }
+            }
+        } else if (sneakTimes.containsKey(player)) {
+            if (System.currentTimeMillis() < sneakTimes.get(player)) {
+                craft.setCruising(false);
+            }
+            sneakTimes.remove(player);
+        }
+
+        if (direction != craft.getCruiseDirection()) {
+            craft.setCruiseDirection(direction);
         }
     }
 
-    public void addOrSetCooldown(Craft c, Long endTime) { cooldowns.put(c, endTime); }
+    public void addControlledCraft(Craft craft, Player player) {
+        Player oldPlayer = controlledCrafts.put(craft, player);
+        if (oldPlayer != null && !oldPlayer.equals(player)) {
+            clearPlayerState(oldPlayer);
+        }
+        playerToCraft.put(player, (PlayerCraft) craft);
+
+        if (isCombatAircraft(craft)) {
+            craft.setCruiseDirection(cardinalDirectionFromYaw(player.getLocation().getYaw()));
+            craft.setCruising(false);
+            aircraftCurrentSkip.put(craft, 0.0);
+            aircraftVelocity.put(craft, new Vector(0, 0, 0));
+            aircraftResidual.put(craft, new Vector(0, 0, 0));
+            aircraftLastImpulse.put(craft, 0L);
+        }
+    }
+
+    public void removeControlledCraft(Craft craft) {
+        Player player = controlledCrafts.remove(craft);
+        if (player != null) {
+            clearPlayerState(player);
+        }
+        aircraftLastImpulse.remove(craft);
+        aircraftCurrentSkip.remove(craft);
+        aircraftVelocity.remove(craft);
+        aircraftResidual.remove(craft);
+    }
+
+    public void addOrSetCooldown(Craft craft, Long endTime) {
+        cooldowns.put(craft, endTime);
+    }
+
+    public void rotateAircraftCruiseDirection(Craft craft, MovecraftRotation rotation) {
+        if (!isCombatAircraft(craft)) {
+            return;
+        }
+        craft.setCruiseDirection(rotateCardinal(craft.getCruiseDirection(), rotation));
+    }
+
+    private void clearPlayerState(Player player) {
+        playerToCraft.remove(player);
+        pendingMovements.remove(player);
+        lastInput.remove(player);
+        lastInputTime.remove(player);
+        sneakTimes.remove(player);
+        lastSneakState.remove(player);
+    }
+
+    private InputState readInput(Player player) {
+        double[] delta = pendingMovements.remove(player);
+        if (delta != null && (Math.abs(delta[0]) > 0.05 || Math.abs(delta[2]) > 0.05)) {
+            lastInput.put(player, delta);
+            lastInputTime.put(player, System.currentTimeMillis());
+        } else {
+            Long inputTime = lastInputTime.get(player);
+            double[] last = lastInput.get(player);
+            if (last != null && inputTime != null && System.currentTimeMillis() - inputTime < 150) {
+                delta = last;
+            } else {
+                lastInput.remove(player);
+                lastInputTime.remove(player);
+                delta = new double[] {0, 0, 0};
+            }
+        }
+
+        Vector input = new Vector(delta[0], 0, delta[2]);
+        if (input.lengthSquared() < 0.0025) {
+            return new InputState(false, false, false, false);
+        }
+        input.normalize();
+
+        Vector facing = player.getLocation().getDirection();
+        facing.setY(0);
+        if (facing.lengthSquared() < 0.0025) {
+            return new InputState(false, false, false, false);
+        }
+        facing.normalize();
+
+        Vector right = new Vector(-facing.getZ(), 0, facing.getX());
+        double forwardDot = facing.dot(input);
+        double rightDot = right.dot(input);
+
+        return new InputState(
+                forwardDot > 0.40,
+                forwardDot < -0.40,
+                rightDot < -0.40,
+                rightDot > 0.40
+        );
+    }
+
+    private static boolean isCombatAircraft(Craft craft) {
+        String craftName = craft.getType().getStringProperty(CraftType.NAME).toLowerCase();
+        return craftName.contains("fighter") || craftName.contains("bomber");
+    }
+
+    private static double blocksPerImpulseForGear(int gear) {
+        double blocksPerSecond = AIRCRAFT_MIN_BLOCKS_PER_SECOND
+                + ((gear - 1) * (AIRCRAFT_MAX_BLOCKS_PER_SECOND - AIRCRAFT_MIN_BLOCKS_PER_SECOND) / 8.0);
+        return blocksPerSecond / 2.0;
+    }
+
+    private static double approach(double current, double target, double accelStep, double decelStep) {
+        double step = target > current ? accelStep : decelStep;
+        if (Math.abs(target - current) <= step) {
+            return target;
+        }
+        return current + Math.signum(target - current) * step;
+    }
+
+    private static int truncateTowardZero(double value) {
+        return value >= 0 ? (int) Math.floor(value) : (int) Math.ceil(value);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static CruiseDirection cardinalDirectionFromYaw(float yaw) {
+        yaw = yaw % 360;
+        if (yaw < 0) {
+            yaw += 360;
+        }
+        if (yaw >= 315 || yaw < 45) {
+            return CruiseDirection.SOUTH;
+        }
+        if (yaw >= 45 && yaw < 135) {
+            return CruiseDirection.WEST;
+        }
+        if (yaw >= 135 && yaw < 225) {
+            return CruiseDirection.NORTH;
+        }
+        return CruiseDirection.EAST;
+    }
+
+    private static Vector directionToVector(CruiseDirection direction) {
+        switch (direction) {
+            case NORTH:
+                return new Vector(0, 0, -1);
+            case SOUTH:
+                return new Vector(0, 0, 1);
+            case EAST:
+                return new Vector(1, 0, 0);
+            case WEST:
+                return new Vector(-1, 0, 0);
+            default:
+                return new Vector(0, 0, 0);
+        }
+    }
+
+    private static Vector leftOf(Vector forward) {
+        return new Vector(forward.getZ(), 0, -forward.getX());
+    }
+
+    private static CruiseDirection rotateCardinal(CruiseDirection direction, MovecraftRotation rotation) {
+        boolean clockwise = rotation == MovecraftRotation.CLOCKWISE;
+        switch (direction) {
+            case NORTH:
+                return clockwise ? CruiseDirection.EAST : CruiseDirection.WEST;
+            case EAST:
+                return clockwise ? CruiseDirection.SOUTH : CruiseDirection.NORTH;
+            case SOUTH:
+                return clockwise ? CruiseDirection.WEST : CruiseDirection.EAST;
+            case WEST:
+                return clockwise ? CruiseDirection.NORTH : CruiseDirection.SOUTH;
+            default:
+                return direction;
+        }
+    }
+
+    private static final class InputState {
+        private final boolean forward;
+        private final boolean backward;
+        private final boolean strafeLeft;
+        private final boolean strafeRight;
+
+        private InputState(boolean forward, boolean backward, boolean strafeLeft, boolean strafeRight) {
+            this.forward = forward;
+            this.backward = backward;
+            this.strafeLeft = strafeLeft;
+            this.strafeRight = strafeRight;
+        }
+    }
 }
