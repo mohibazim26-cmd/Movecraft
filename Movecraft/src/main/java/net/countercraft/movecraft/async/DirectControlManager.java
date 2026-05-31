@@ -30,6 +30,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private static final double AIRCRAFT_ACCEL_PER_IMPULSE = 1.5;
     private static final double AIRCRAFT_DECEL_PER_IMPULSE = 2.5;
     private static final double AIRCRAFT_OLD_VECTOR_WEIGHT = 0.55;
+    private static final double STANDARD_OLD_VECTOR_WEIGHT = 0.50;
+    private static final double STANDARD_STOP_EPSILON = 0.03;
 
     private final Map<Craft, Player> controlledCrafts = new HashMap<>();
     private final Map<Player, PlayerCraft> playerToCraft = new HashMap<>();
@@ -44,6 +46,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Craft, Vector> aircraftVelocity = new HashMap<>();
     private final Map<Craft, Vector> aircraftResidual = new HashMap<>();
     private final Map<Player, Boolean> lastSneakState = new HashMap<>();
+    private final Map<Craft, Long> standardLastImpulse = new HashMap<>();
+    private final Map<Craft, Vector> standardVelocity = new HashMap<>();
+    private final Map<Craft, Vector> standardResidual = new HashMap<>();
+    private final Map<Craft, Boolean> standardCruising = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -186,6 +192,8 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     }
 
     private void runStandardDirectControl(PlayerCraft craft, Player player) {
+        craft.setCruising(false);
+
         double[] delta = pendingMovements.remove(player);
         double movedX;
         double movedY;
@@ -235,11 +243,13 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             zDirection = CruiseDirection.NORTH;
         }
 
-        if ((Math.abs(movedX) > 0 || Math.abs(movedZ) > 0 || movedY > 0) && !craft.getCruising()) {
-            craft.setCruising(true);
+        CruiseDirection direction = craft.getCruiseDirection();
+        boolean shouldCruise = standardCruising.getOrDefault(craft, false);
+        boolean hasMovementInput = Math.abs(movedX) > 0 || Math.abs(movedZ) > 0 || movedY > 0;
+        if (hasMovementInput) {
+            shouldCruise = true;
         }
 
-        CruiseDirection direction = craft.getCruiseDirection();
         if (xDirection != CruiseDirection.NONE && zDirection != CruiseDirection.NONE) {
             if (xDirection == CruiseDirection.EAST) {
                 direction = zDirection == CruiseDirection.NORTH ? CruiseDirection.NORTHEAST : CruiseDirection.SOUTHEAST;
@@ -261,13 +271,11 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 sneakTimes.put(player, System.currentTimeMillis() + 250);
             } else if (System.currentTimeMillis() > sneakTimes.get(player)) {
                 direction = CruiseDirection.DOWN;
-                if (!craft.getCruising()) {
-                    craft.setCruising(true);
-                }
+                shouldCruise = true;
             }
         } else if (sneakTimes.containsKey(player)) {
             if (System.currentTimeMillis() < sneakTimes.get(player)) {
-                craft.setCruising(false);
+                shouldCruise = false;
             }
             sneakTimes.remove(player);
         }
@@ -275,6 +283,64 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         if (direction != craft.getCruiseDirection()) {
             craft.setCruiseDirection(direction);
         }
+        standardCruising.put(craft, shouldCruise);
+
+        long now = System.currentTimeMillis();
+        long impulseMs = getStandardImpulseMs(craft);
+        Long lastImpulse = standardLastImpulse.get(craft);
+        if (lastImpulse != null && now - lastImpulse < impulseMs) {
+            return;
+        }
+        standardLastImpulse.put(craft, now);
+
+        Vector targetDirection = new Vector(0, 0, 0);
+        if (shouldCruise) {
+            targetDirection = directionToVector(direction);
+            if (targetDirection.lengthSquared() > 0) {
+                targetDirection.normalize();
+            }
+        }
+
+        Vector currentVelocity = standardVelocity.getOrDefault(craft, new Vector(0, 0, 0));
+        currentVelocity.multiply(STANDARD_OLD_VECTOR_WEIGHT)
+                .add(targetDirection.clone().multiply(1.0 - STANDARD_OLD_VECTOR_WEIGHT));
+        if (currentVelocity.lengthSquared() < STANDARD_STOP_EPSILON * STANDARD_STOP_EPSILON) {
+            currentVelocity.zero();
+        }
+        standardVelocity.put(craft, currentVelocity.clone());
+
+        double maxBlocksPerSecond = 1000.0 / impulseMs;
+        double currentBlocksPerSecond = targetDirection.lengthSquared() > 0
+                ? Math.max(0.0, currentVelocity.dot(targetDirection)) * maxBlocksPerSecond
+                : currentVelocity.length() * maxBlocksPerSecond;
+        if (shouldCruise || currentVelocity.lengthSquared() > 0) {
+            sendSpeedActionBar(player, currentBlocksPerSecond, maxBlocksPerSecond);
+        }
+
+        Vector residual = standardResidual.getOrDefault(craft, new Vector(0, 0, 0));
+        double preciseX = currentVelocity.getX() + residual.getX();
+        double preciseY = currentVelocity.getY() + residual.getY();
+        double preciseZ = currentVelocity.getZ() + residual.getZ();
+
+        int dx = truncateTowardZero(preciseX);
+        int dy = truncateTowardZero(preciseY);
+        int dz = truncateTowardZero(preciseZ);
+
+        residual.setX(preciseX - dx);
+        residual.setY(preciseY - dy);
+        residual.setZ(preciseZ - dz);
+        standardResidual.put(craft, residual);
+
+        if (dx == 0 && dy == 0 && dz == 0) {
+            return;
+        }
+
+        craft.setLastCruiseUpdate(now);
+        Movecraft.getInstance().getServer().getScheduler().runTask(Movecraft.getInstance(), () -> {
+            if (controlledCrafts.containsKey(craft) && craft.getPilotLocked()) {
+                craft.translate(craft.getWorld(), dx, dy, dz);
+            }
+        });
     }
 
     public void addControlledCraft(Craft craft, Player player) {
@@ -291,6 +357,12 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             aircraftVelocity.put(craft, new Vector(0, 0, 0));
             aircraftResidual.put(craft, new Vector(0, 0, 0));
             aircraftLastImpulse.put(craft, 0L);
+        } else {
+            craft.setCruising(false);
+            standardCruising.put(craft, false);
+            standardVelocity.put(craft, new Vector(0, 0, 0));
+            standardResidual.put(craft, new Vector(0, 0, 0));
+            standardLastImpulse.put(craft, 0L);
         }
     }
 
@@ -303,6 +375,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         aircraftCurrentSkip.remove(craft);
         aircraftVelocity.remove(craft);
         aircraftResidual.remove(craft);
+        standardLastImpulse.remove(craft);
+        standardVelocity.remove(craft);
+        standardResidual.remove(craft);
+        standardCruising.remove(craft);
     }
 
     public void addOrSetCooldown(Craft craft, Long endTime) {
@@ -397,6 +473,36 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
         player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(message));
     }
 
+    private static void sendSpeedActionBar(Player player, double currentBlocksPerSecond, double maxBlocksPerSecond) {
+        double percent = currentBlocksPerSecond / Math.max(0.1, maxBlocksPerSecond);
+
+        ChatColor speedColor;
+        if (percent <= 0.40) {
+            speedColor = ChatColor.RED;
+        } else if (percent < 0.70) {
+            speedColor = ChatColor.YELLOW;
+        } else {
+            speedColor = ChatColor.GREEN;
+        }
+
+        String message = ChatColor.YELLOW.toString() + ChatColor.BOLD + "Velocit\u00e0: "
+                + speedColor + String.format("%.1f blocchi/s", Math.max(0.0, currentBlocksPerSecond));
+        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(message));
+    }
+
+    private static long getStandardImpulseMs(PlayerCraft craft) {
+        int tickCooldown = (int) craft.getType().getPerWorldProperty(
+                CraftType.PER_WORLD_TICK_COOLDOWN, craft.getWorld());
+        tickCooldown = Math.max(1, tickCooldown);
+
+        long impulseMs = tickCooldown * 50L;
+        if (craft.getType().getBoolProperty(CraftType.HALF_SPEED_UNDERWATER)
+                && craft.getHitBox().getMinY() < craft.getWorld().getSeaLevel()) {
+            impulseMs *= 2;
+        }
+        return Math.max(50L, impulseMs);
+    }
+
     private static double approach(double current, double target, double accelStep, double decelStep) {
         double step = target > current ? accelStep : decelStep;
         if (Math.abs(target - current) <= step) {
@@ -440,6 +546,18 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 return new Vector(1, 0, 0);
             case WEST:
                 return new Vector(-1, 0, 0);
+            case NORTHEAST:
+                return new Vector(1, 0, -1);
+            case NORTHWEST:
+                return new Vector(-1, 0, -1);
+            case SOUTHEAST:
+                return new Vector(1, 0, 1);
+            case SOUTHWEST:
+                return new Vector(-1, 0, 1);
+            case UP:
+                return new Vector(0, 1, 0);
+            case DOWN:
+                return new Vector(0, -1, 0);
             default:
                 return new Vector(0, 0, 0);
         }
