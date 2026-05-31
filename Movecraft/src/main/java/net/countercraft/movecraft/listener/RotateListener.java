@@ -50,7 +50,7 @@ public final class RotateListener implements Listener {
                 }
 
                 // Creazione della barra Blu Scuro (BarColor.BLUE) in grassetto (§l§9)
-                final BossBar rotationBar = Bukkit.createBossBar("§l§9Rotazione", BarColor.BLUE, BarStyle.SOLID);
+                final BossBar rotationBar = Bukkit.createBossBar("§9§lRotazione", BarColor.BLUE, BarStyle.SOLID);
                 // La barra parte vuota (0.0) e si riempirà man mano che il tempo scade
                 rotationBar.setProgress(0.0);
                 rotationBar.addPlayer(player);
