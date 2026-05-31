@@ -24,10 +24,13 @@ import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
-import net.countercraft.movecraft.events.CraftRotateEvent;
 import net.countercraft.movecraft.localisation.I18nSupport;
 import net.countercraft.movecraft.util.MathUtils;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.data.type.Switch;
@@ -38,7 +41,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
@@ -47,24 +53,27 @@ import java.util.WeakHashMap;
 
 public final class InteractListener implements Listener {
     private final Map<Player, Long> timeMap = new WeakHashMap<>();
-    private HashMap<Player, Long> droppedMap = new HashMap<>();
+    private final Map<Player, Long> droppedMap = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
     public void onPlayerInteract(@NotNull PlayerInteractEvent e) {
         if (e.getAction() == Action.LEFT_CLICK_BLOCK || e.getAction() == Action.LEFT_CLICK_AIR) {
-            if(droppedMap.containsKey(e.getPlayer()) && System.currentTimeMillis() < droppedMap.get(e.getPlayer()))
+            if (droppedMap.containsKey(e.getPlayer()) && System.currentTimeMillis() < droppedMap.get(e.getPlayer())) {
                 return;
+            }
+
             if (e.getItem() != null && e.getItem().getType() == Settings.PilotTool) {
                 final PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
                 if (craft != null) {
                     final Player player = e.getPlayer();
                     e.setCancelled(true);
-                    // Delay activation by 2 ticks so a concurrent compass-drop (rotation) can
-                    // populate droppedMap first. Without this, LEFT_CLICK may fire before the
-                    // drop event and trigger direct control even though the player intended to rotate.
+                    // Delay activation by 2 ticks so a concurrent compass-drop rotation can
+                    // populate droppedMap first.
                     Bukkit.getScheduler().runTaskLater(Movecraft.getInstance(), () -> {
-                        if (droppedMap.containsKey(player) && System.currentTimeMillis() < droppedMap.get(player))
+                        if (droppedMap.containsKey(player) && System.currentTimeMillis() < droppedMap.get(player)) {
                             return;
+                        }
+
                         if (!craft.getPilotLocked()) {
                             if (player.hasPermission("movecraft." + craft.getType().getStringProperty(CraftType.NAME) + ".move")
                                     && craft.getType().getBoolProperty(CraftType.CAN_DIRECT_CONTROL)) {
@@ -86,59 +95,30 @@ public final class InteractListener implements Listener {
                     }, 2L);
                     return;
                 }
-                /*// Handle pilot tool left clicks
-                e.setCancelled(true);
-
-                Player p = e.getPlayer();
-                PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(p);
-                if (craft == null)
-                    return;
-
-                if (craft.getPilotLocked()) {
-                    // Allow all players to leave direct control mode
-                    craft.setPilotLocked(false);
-                    p.sendMessage(I18nSupport.getInternationalisedString("Direct Control - Leaving"));
-                }
-                else if (!p.hasPermission(
-                        "movecraft." + craft.getType().getStringProperty(CraftType.NAME) + ".move")
-                        || !craft.getType().getBoolProperty(CraftType.CAN_DIRECT_CONTROL)) {
-                    // Deny players from entering direct control mode
-                    p.sendMessage(I18nSupport.getInternationalisedString("Insufficient Permissions"));
-                }
-                else {
-                    // Enter direct control mode
-                    craft.setPilotLocked(true);
-                    craft.setPilotLockedX(p.getLocation().getBlockX() + 0.5);
-                    craft.setPilotLockedY(p.getLocation().getY());
-                    craft.setPilotLockedZ(p.getLocation().getBlockZ() + 0.5);
-                    p.sendMessage(I18nSupport.getInternationalisedString("Direct Control - Entering"));
-                }*/
-            }
-            else if (e.getAction() == Action.LEFT_CLICK_BLOCK) {
-                // Handle button left clicks
+            } else if (e.getAction() == Action.LEFT_CLICK_BLOCK) {
                 BlockState state = e.getClickedBlock().getState();
-                if (!(state instanceof Switch))
+                if (!(state instanceof Switch)) {
                     return;
+                }
 
                 Switch data = (Switch) state.getBlockData();
                 if (data.isPowered()) {
-                    // Depower the button
                     data.setPowered(false);
                     e.getClickedBlock().setBlockData(data);
                     e.setCancelled(true);
                 }
             }
-        }
-        else if (e.getAction() == Action.RIGHT_CLICK_BLOCK || e.getAction() == Action.RIGHT_CLICK_AIR) {
-            if (e.getItem() == null || e.getItem().getType() != Settings.PilotTool)
+        } else if (e.getAction() == Action.RIGHT_CLICK_BLOCK || e.getAction() == Action.RIGHT_CLICK_AIR) {
+            if (e.getItem() == null || e.getItem().getType() != Settings.PilotTool) {
                 return;
+            }
 
-            Player p = e.getPlayer();
-            PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(p);
-            if (craft == null)
+            Player player = e.getPlayer();
+            PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(player);
+            if (craft == null) {
                 return;
+            }
 
-            // Handle pilot tool right clicks
             e.setCancelled(true);
 
             CraftType type = craft.getType();
@@ -146,50 +126,52 @@ public final class InteractListener implements Listener {
             int tickCooldown = (int) craft.getType().getPerWorldProperty(
                     CraftType.PER_WORLD_TICK_COOLDOWN, craft.getWorld());
             if (type.getBoolProperty(CraftType.GEAR_SHIFTS_AFFECT_DIRECT_MOVEMENT)
-                    && type.getBoolProperty(CraftType.GEAR_SHIFTS_AFFECT_TICK_COOLDOWN))
-                tickCooldown *= currentGear; // Account for gear shifts
-            Long lastTime = timeMap.get(p);
+                    && type.getBoolProperty(CraftType.GEAR_SHIFTS_AFFECT_TICK_COOLDOWN)) {
+                tickCooldown *= currentGear;
+            }
+
+            Long lastTime = timeMap.get(player);
             if (lastTime != null) {
                 long ticksElapsed = (System.currentTimeMillis() - lastTime) / 50;
 
-                // if the craft should go slower underwater, make time pass more slowly there
                 if (craft.getType().getBoolProperty(CraftType.HALF_SPEED_UNDERWATER)
-                        && craft.getHitBox().getMinY() < craft.getWorld().getSeaLevel())
+                        && craft.getHitBox().getMinY() < craft.getWorld().getSeaLevel()) {
                     ticksElapsed /= 2;
+                }
 
-                if (ticksElapsed < tickCooldown)
-                    return; // Not enough time has passed, so don't do anything
+                if (ticksElapsed < tickCooldown) {
+                    return;
+                }
             }
 
-            if (!p.hasPermission("movecraft." + craft.getType().getStringProperty(CraftType.NAME) + ".move")) {
-                p.sendMessage(I18nSupport.getInternationalisedString("Insufficient Permissions"));
-                return; // Player doesn't have permission to move this craft, so don't do anything
+            if (!player.hasPermission("movecraft." + craft.getType().getStringProperty(CraftType.NAME) + ".move")) {
+                player.sendMessage(I18nSupport.getInternationalisedString("Insufficient Permissions"));
+                return;
             }
 
-            if (!MathUtils.locationNearHitBox(craft.getHitBox(), p.getLocation(), 2))
-                return; // Player is not near the craft, so don't do anything
+            if (!MathUtils.locationNearHitBox(craft.getHitBox(), player.getLocation(), 2)) {
+                return;
+            }
 
             if (craft.getPilotLocked()) {
-                // Direct control mode allows vertical movements when right-clicking
-                int dy = 1; // Default to up
-                if (p.isSneaking())
-                    dy = -1; // Down if sneaking
-                if (craft.getType().getBoolProperty(CraftType.GEAR_SHIFTS_AFFECT_DIRECT_MOVEMENT))
-                    dy *= currentGear; // account for gear shifts
+                int dy = player.isSneaking() ? -1 : 1;
+                if (craft.getType().getBoolProperty(CraftType.GEAR_SHIFTS_AFFECT_DIRECT_MOVEMENT)) {
+                    dy *= currentGear;
+                }
 
                 craft.translate(craft.getWorld(), 0, dy, 0);
-                timeMap.put(p, System.currentTimeMillis());
+                timeMap.put(player, System.currentTimeMillis());
                 craft.setLastCruiseUpdate(System.currentTimeMillis());
                 return;
             }
 
-            double rotation = p.getLocation().getYaw() * Math.PI / 180.0;
+            double rotation = player.getLocation().getYaw() * Math.PI / 180.0;
             float nx = -(float) Math.sin(rotation);
             float nz = (float) Math.cos(rotation);
             int dx = (Math.abs(nx) >= 0.5 ? 1 : 0) * (int) Math.signum(nx);
             int dz = (Math.abs(nz) > 0.5 ? 1 : 0) * (int) Math.signum(nz);
 
-            float pitch = p.getLocation().getPitch();
+            float pitch = player.getLocation().getPitch();
             int dy = -(Math.abs(pitch) >= 25 ? 1 : 0) * (int) Math.signum(pitch);
             if (Math.abs(pitch) >= 75) {
                 dx = 0;
@@ -197,64 +179,136 @@ public final class InteractListener implements Listener {
             }
 
             craft.translate(craft.getWorld(), dx, dy, dz);
-            timeMap.put(p, System.currentTimeMillis());
+            timeMap.put(player, System.currentTimeMillis());
             craft.setLastCruiseUpdate(System.currentTimeMillis());
         }
     }
 
-@EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onAircraftThrottleScroll(@NotNull PlayerItemHeldEvent e) {
+        Player player = e.getPlayer();
+        Craft craft = CraftManager.getInstance().getCraftByPlayer(player);
+        if (craft == null || !craft.getPilotLocked() || !isCombatAircraft(craft)) {
+            return;
+        }
+
+        PlayerInventory inventory = player.getInventory();
+        int newSlot = e.getNewSlot();
+        int clockSlot = findClockSlot(inventory, e.getPreviousSlot());
+        if (clockSlot < 0) {
+            return;
+        }
+
+        if (clockSlot != newSlot) {
+            ItemStack clock = inventory.getItem(clockSlot);
+            ItemStack displaced = inventory.getItem(newSlot);
+            inventory.setItem(clockSlot, displaced);
+            inventory.setItem(newSlot, clock);
+        }
+
+        int gear = newSlot + 1;
+        craft.setCurrentGear(gear);
+
+        double blocksPerSecond = 4.0 + ((gear - 1) * 26.0 / 8.0);
+        player.spigot().sendMessage(
+                ChatMessageType.ACTION_BAR,
+                new TextComponent(ChatColor.YELLOW + "Throttle " + gear + "/9 "
+                        + ChatColor.GRAY + String.format("(%.1f blocks/s)", blocksPerSecond))
+        );
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
     public void onPlayerDropItem(@NotNull PlayerDropItemEvent e) {
         Material itemType = e.getItemDrop().getItemStack().getType();
-        
-        // CONTROLLO: Accetta sia la Bussola (Navi standard) che l'Orologio (Aerei)
-        if (itemType == Material.COMPASS || itemType == Material.CLOCK) {
-            Craft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
-            if (craft == null)
-                return;
-
-            // Se il giocatore usa l'Orologio, permettiamo la rotazione SOLO su Fighter e Bomber
-            if (itemType == Material.CLOCK) {
-                String craftName = craft.getType().getStringProperty(CraftType.NAME).toLowerCase();
-                if (!craftName.contains("fighter") && !craftName.contains("bomber")) {
-                    return; // Se non è un aereo, l'orologio non deve farlo girare
-                }
-            }
-
-            droppedMap.put(e.getPlayer(), System.currentTimeMillis() + 1200);
-
-            MovecraftRotation rotation = MovecraftRotation.ANTICLOCKWISE;
-            if (!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation())))
-                return;
-
-            craft.rotate(rotation, craft.getHitBox().getMidPoint());
-            e.setCancelled(true);
+        if (itemType != Material.COMPASS && itemType != Material.CLOCK) {
+            return;
         }
+
+        PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
+        if (craft == null) {
+            return;
+        }
+
+        if (itemType == Material.CLOCK && !isCombatAircraft(craft)) {
+            return;
+        }
+
+        droppedMap.put(e.getPlayer(), System.currentTimeMillis() + 1200);
+
+        if (!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation()))) {
+            return;
+        }
+
+        rotateCraftFromControlKey(e.getPlayer(), craft, MovecraftRotation.ANTICLOCKWISE);
+        e.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.LOWEST) // LOWEST so that it runs before the other events
     public void onPlayerSwapitem(@NotNull PlayerSwapHandItemsEvent e) {
-        Material itemType = e.getOffHandItem().getType();
-        
-        // CONTROLLO: Accetta sia la Bussola (Navi standard) che l'Orologio (Aerei)
-        if (itemType == Material.COMPASS || itemType == Material.CLOCK) {
-            Craft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
-            if (craft == null)
-                return;
-
-            // Se il giocatore usa l'Orologio, permettiamo la rotazione SOLO su Fighter e Bomber
-            if (itemType == Material.CLOCK) {
-                String craftName = craft.getType().getStringProperty(CraftType.NAME).toLowerCase();
-                if (!craftName.contains("fighter") && !craftName.contains("bomber")) {
-                    return; // Se non è un aereo, l'orologio non deve farlo girare
-                }
-            }
-
-            MovecraftRotation rotation = MovecraftRotation.CLOCKWISE;
-            if (!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation())))
-                return;
-
-            craft.rotate(rotation, craft.getHitBox().getMidPoint());
-            e.setCancelled(true);
+        ItemStack offHandItem = e.getOffHandItem();
+        if (offHandItem == null) {
+            return;
         }
+
+        Material itemType = offHandItem.getType();
+        if (itemType != Material.COMPASS && itemType != Material.CLOCK) {
+            return;
+        }
+
+        PlayerCraft craft = CraftManager.getInstance().getCraftByPlayer(e.getPlayer());
+        if (craft == null) {
+            return;
+        }
+
+        if (itemType == Material.CLOCK && !isCombatAircraft(craft)) {
+            return;
+        }
+
+        if (!MathUtils.locIsNearCraftFast(craft, MathUtils.bukkit2MovecraftLoc(e.getPlayer().getLocation()))) {
+            return;
+        }
+
+        rotateCraftFromControlKey(e.getPlayer(), craft, MovecraftRotation.CLOCKWISE);
+        e.setCancelled(true);
+    }
+
+    private int findClockSlot(PlayerInventory inventory, int preferredSlot) {
+        ItemStack preferred = inventory.getItem(preferredSlot);
+        if (preferred != null && preferred.getType() == Material.CLOCK) {
+            return preferredSlot;
+        }
+
+        for (int i = 0; i < 36; i++) {
+            ItemStack item = inventory.getItem(i);
+            if (item != null && item.getType() == Material.CLOCK) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean isCombatAircraft(Craft craft) {
+        String craftName = craft.getType().getStringProperty(CraftType.NAME).toLowerCase();
+        return craftName.contains("fighter") || craftName.contains("bomber");
+    }
+
+    private void rotateCraftFromControlKey(Player player, PlayerCraft craft, MovecraftRotation rotation) {
+        boolean combatAircraftDirectControl = isCombatAircraft(craft) && craft.getPilotLocked();
+        craft.rotate(
+                rotation,
+                combatAircraftDirectControl
+                        ? MathUtils.bukkit2MovecraftLoc(player.getLocation())
+                        : craft.getHitBox().getMidPoint()
+        );
+
+        if (!combatAircraftDirectControl) {
+            return;
+        }
+
+        Movecraft.getInstance().getDirectControlManager().rotateAircraftCruiseDirection(craft, rotation);
+
+        Location location = player.getLocation();
+        location.setYaw(location.getYaw() + (rotation == MovecraftRotation.CLOCKWISE ? 90 : -90));
+        player.teleport(location);
     }
 }
