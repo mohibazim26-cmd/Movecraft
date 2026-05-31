@@ -285,7 +285,8 @@ public final class InteractListener implements Listener {
         boolean directControl = craft.getPilotLocked();
         boolean combatAircraftDirectControl = isCombatAircraft(craft) && directControl;
         if (directControl && !combatAircraftDirectControl) {
-            Movecraft.getInstance().getDirectControlManager().pauseStandardDirectControlMovement(craft, 750L);
+            Movecraft.getInstance().getDirectControlManager().rotateStandardCruiseDirection(craft, rotation);
+            Movecraft.getInstance().getDirectControlManager().pauseStandardDirectControlMovement(craft, 300L);
         }
 
         craft.rotate(
@@ -302,4 +303,3 @@ public final class InteractListener implements Listener {
         Movecraft.getInstance().getDirectControlManager().rotateAircraftCruiseDirection(craft, rotation);
     }
 }
-
