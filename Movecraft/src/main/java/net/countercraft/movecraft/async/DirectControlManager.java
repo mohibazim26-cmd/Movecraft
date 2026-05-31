@@ -32,9 +32,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
     private final Map<Player, Long> lastInputTime = new HashMap<>();
     private final Map<Craft, Vector> residualMovements = new HashMap<>();
 
-    // --- STRUTTURE DATI PER FISICA APPLICATA (INERZIA E DERAPATA) ---
+    // --- STRUTTURE PER FISICA E INERZIA ---
     private final Map<Craft, Vector> currentVelocity = new HashMap<>();
     private final Map<Craft, Double> currentSpeedFactor = new HashMap<>();
+    private final Map<Player, Boolean> lastSneakState = new HashMap<>();
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -75,17 +76,17 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 continue;
             }
 
-            String craftName = pCraft.getType().getStringProperty(CraftType.NAME);
+            String craftName = pCraft.getType().getStringProperty(CraftType.NAME).toLowerCase();
 
             // =================================================================
-            // LOGICA COMBAT AIRCRAFT (Fighter / Bomber) - Fisica Inerziale Attiva
+            // LOGICA COMBAT AIRCRAFT (Fighter / Bomber) - Bilanciata e Inerziale
             // =================================================================
-            if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
+            if (craftName.contains("fighter") || craftName.contains("bomber")) {
 
                 PlayerInventory inv = player.getInventory();
                 int currentSlot = inv.getHeldItemSlot();
 
-                // SWAP AUTOMATICO E SICURO DELL'OROLOGIO
+                // SWAP AUTOMATICO MANETTA (Usa l'orologio, cambialo in COMPASS se usi la bussola)
                 ItemStack handItem = inv.getItemInMainHand();
                 if (handItem == null || handItem.getType() != Material.CLOCK) {
                     for (int i = 0; i < 36; i++) {
@@ -98,7 +99,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                 }
 
-                // AGGIORNAMENTO GEAR E SINCRO CON L'HOTBAR
+                // SINCRO MARCE CON L'HOTBAR
                 ItemStack activeHand = inv.getItemInMainHand();
                 if (activeHand != null && activeHand.getType() == Material.CLOCK) {
                     int targetGear = currentSlot + 1; 
@@ -106,39 +107,42 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     if (pCraft.getCurrentGear() != targetGear) {
                         pCraft.setCurrentGear(targetGear);
                         
-                        String msg = "§e§lMANETTA: Gear " + targetGear + "/9";
+                        double bps = 2.0 + ((double) currentSlot * (13.0 / 8.0));
+                        String msg = "§e§lMANETTA: Gear " + targetGear + "/9 §7(" + String.format("%.1f", bps) + " Blocs/s)";
                         player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
                             net.md_5.bungee.api.chat.TextComponent.fromLegacyText(msg)
                         );
                     }
                 }
 
-                // IL FRENO D'EMERGENZA (SHIFT) - Azzera istantaneamente l'inerzia accumulata
-                if (player.isSneaking()) {
-                    if (pCraft.getCruising()) {
-                        pCraft.setCruising(false);
-                    }
+                // FRENO E AUTOCRUISE (Preso dal tuo sistema di isolamento totale)
+                boolean isSneaking = player.isSneaking();
+                boolean wasSneaking = lastSneakState.getOrDefault(player, false);
+                lastSneakState.put(player, isSneaking);
+
+                if (isSneaking) {
+                    if (pCraft.getCruising()) pCraft.setCruising(false);
                     currentSpeedFactor.put(pCraft, 0.0);
                     currentVelocity.remove(pCraft);
                     residualMovements.remove(pCraft);
                     pendingMovements.remove(player);
                     continue; 
-                } else {
-                    if (!pCraft.getCruising()) {
-                        float yaw = player.getLocation().getYaw();
-                        CruiseDirection newDir = CruiseDirection.NORTH;
-                        if (yaw < 0) yaw += 360;
-                        if (yaw >= 315 || yaw < 45) newDir = CruiseDirection.SOUTH;
-                        else if (yaw >= 45 && yaw < 135) newDir = CruiseDirection.WEST;
-                        else if (yaw >= 135 && yaw < 225) newDir = CruiseDirection.NORTH;
-                        else if (yaw >= 225 && yaw < 315) newDir = CruiseDirection.EAST;
-
-                        pCraft.setCruiseDirection(newDir);
-                        pCraft.setCruising(true); 
-                    }
                 }
 
-                // LETTURA INPUT TASTIERA
+                if (!pCraft.getCruising() || (!isSneaking && wasSneaking)) {
+                    float yaw = player.getLocation().getYaw();
+                    CruiseDirection newDir = CruiseDirection.NORTH;
+                    if (yaw < 0) yaw += 360;
+                    if (yaw >= 315 || yaw < 45) newDir = CruiseDirection.SOUTH;
+                    else if (yaw >= 45 && yaw < 135) newDir = CruiseDirection.WEST;
+                    else if (yaw >= 135 && yaw < 225) newDir = CruiseDirection.NORTH;
+                    else if (yaw >= 225 && yaw < 315) newDir = CruiseDirection.EAST;
+
+                    pCraft.setCruiseDirection(newDir);
+                    pCraft.setCruising(true); 
+                }
+
+                // LETTURA INPUT MOVIMENTO TASTIERA
                 double[] delta = pendingMovements.remove(player);
                 double movedX = 0, movedY = 0;
 
@@ -159,12 +163,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     }
                 }
 
-                if (cooldowns.containsKey(pCraft)) {
-                    if (cooldowns.get(pCraft) > System.currentTimeMillis()) continue;
-                    else cooldowns.remove(pCraft);
-                }
+                // NESSUN COOLDOWN INTERNO RIGIDO: Lasciamo che la config .craft o il tick rate nativo gestiscano il refresh.
 
-                // LETTURA VELOCITÀ MASSIMA DALLA CONFIG
+                // LETTURA VELOCITÀ MASSIMA DALLA CONFIG CONFIGURATA (.craft)
                 int currentGear = pCraft.getCurrentGear();
                 String gearPropertyName = "cruiseSkipBlocksGear" + currentGear;
                 NamespacedKey gearKey = NamespacedKey.fromString("movecraft:" + gearPropertyName.toLowerCase());
@@ -174,10 +175,10 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     blocksPerSecond = pCraft.getType().getIntProperty(gearKey);
                 }
                 if (blocksPerSecond <= 0) {
-                    blocksPerSecond = currentGear * 3; 
+                    blocksPerSecond = currentGear * 2; // Fallback lineare di sicurezza
                 }
 
-                // --- CALCOLO MATEMATICO DELL'INERZIA E DELLA DERAPATA ---
+                // CALCOLO MATEMATICO DINAMICO DELL'INERZIA (Mantiene la fluidità impedendo scatti)
                 CruiseDirection cruiseDir = pCraft.getCruiseDirection();
                 Vector targetDirectionVector = new Vector(0, 0, 0);
 
@@ -194,27 +195,27 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     angleDifference = currentVelVec.angle(targetDirectionVector);
                 }
 
-                // Se l'angolo cambia bruscamente (Curva), simula la forza centrifuga tagliando la velocità al 60%
+                // Forza centrifuga: riduce la velocità nelle virate per simulare la derapata aerodinamica
                 if (angleDifference > 0.1) {
-                    speedFactor = Math.max(0.2, speedFactor * 0.6);
+                    speedFactor = Math.max(0.4, speedFactor * 0.65); 
                 } else {
-                    speedFactor = Math.min(1.0, speedFactor + 0.20); // Accelerazione rettilinea (+20% a movimento)
+                    speedFactor = Math.min(1.0, speedFactor + 0.20); // Progressione morbida in rettilineo
                 }
                 currentSpeedFactor.put(pCraft, speedFactor);
 
-                // Conservazione della traiettoria: 60% vecchio vettore cinetico, 40% nuova direzione cardinale
+                // Conservazione della traiettoria precedente (60% vecchio vettore, 40% nuovo input)
                 currentVelVec.multiply(0.60).add(targetDirectionVector.multiply(0.40));
                 if (currentVelVec.lengthSquared() > 0) {
                     currentVelVec.normalize();
                 }
                 currentVelocity.put(pCraft, currentVelVec.clone());
 
-                // Calcolo dello spazio basato sulla fisica calcolata (Velocità Config * Moltiplicatore Inerzia / 2 movimenti al secondo)
-                double finalSpeedPerMovement = (blocksPerSecond * speedFactor) / 2.0;
+                // 🟢 CORREZIONE QUI: Calcolo dello spazio basato su 20 tick al secondo
+                double finalSpeedPerMovement = (blocksPerSecond * speedFactor) / 20.0;
                 double targetDx = currentVelVec.getX() * finalSpeedPerMovement;
                 double targetDz = currentVelVec.getZ() * finalSpeedPerMovement;
 
-                // TRADUZIONE DEGLI INPUT RELATIVI ALLO SGUARDO (W, A, S, D)
+                // TRADUZIONE INPUT DELLO SGUARDO (WASD)
                 Location eyeLoc = player.getLocation();
                 Vector facingDir = eyeLoc.getDirection().setY(0).normalize();
                 Vector inputDir = new Vector(movedX, 0, movedY);
@@ -237,12 +238,12 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     else if (dotRight < -0.4) strafeLeft = true;
                 }
 
-                // Spostamento Diagonale Verticale (W = Scende, S = Sale)
+                // Controllo asse verticale (W = Scende, S = Sale)
                 int dy = 0;
                 if (movingForward) dy = -1;
                 if (movingBackward) dy = 1;
 
-                // Calcolo vettori ortogonali per lo Strafe laterale (A/D)
+                // Calcolo dello strafe laterale ortogonale (A / D)
                 int strafeX = 0, strafeZ = 0;
                 int forwardX = (int) targetDirectionVector.getX();
                 int forwardZ = (int) targetDirectionVector.getZ();
@@ -261,7 +262,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                     targetDz -= (cruiseDir == CruiseDirection.NORTH || cruiseDir == CruiseDirection.SOUTH ? -forwardZ : forwardX) * finalSpeedPerMovement;
                 }
 
-                // Gestione dei residui decimali (Evita la perdita di blocchi per arrotondamento)
+                // Gestione dei decimali residui per calcolare con precisione i movimenti frazionari
                 Vector residual = residualMovements.getOrDefault(pCraft, new Vector(0, 0, 0));
                 double preciseDx = targetDx + residual.getX();
                 double preciseDz = targetDz + residual.getZ();
@@ -273,7 +274,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                 residual.setZ(preciseDz - dz);
                 residualMovements.put(pCraft, residual);
 
-                // SPOSTAMENTO REALE DEI BLOCCHI SUL THREAD PRINCIPALE
+                // ESECUZIONE DELLA TRASLAZIONE DEI BLOCCHI SUL THREAD PRINCIPALE
                 if (dx != 0 || dy != 0 || dz != 0) {
                     final int finalDx = dx;
                     final int finalDy = dy;
@@ -284,19 +285,11 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
                             pCraft.translate(pCraft.getWorld(), finalDx, finalDy, finalDz);
                         }
                     });
-                    
-                    // Sincronizzazione dinamica del Cooldown basato sul file .craft
-                    NamespacedKey cooldownKey = NamespacedKey.fromString("movecraft:tickcooldown");
-                    int tickCooldown = 10; 
-                    if (cooldownKey != null) {
-                        tickCooldown = pCraft.getType().getIntProperty(cooldownKey);
-                    }
-                    cooldowns.put(pCraft, System.currentTimeMillis() + (tickCooldown * 50L));
                 }
 
             } else {
                 // ==========================================================
-                // LOGICA VEICOLI STANDARD (Rimasta originale e intatta)
+                // LOGICA VEICOLI STANDARD (Navi / Tank / Ecc. - Intatta)
                 // ==========================================================
                 double[] delta = pendingMovements.remove(player);
                 double movedX, movedY, movedZ;
@@ -363,6 +356,14 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
                 if (cd != pCraft.getCruiseDirection())
                     pCraft.setCruiseDirection(cd);
+                
+                // Cooldown standard solo per i veicoli non-aerei
+                NamespacedKey cooldownKey = NamespacedKey.fromString("movecraft:tickcooldown");
+                int tickCooldown = 10;
+                if (cooldownKey != null) {
+                    tickCooldown = pCraft.getType().getIntProperty(cooldownKey);
+                }
+                cooldowns.put(pCraft, System.currentTimeMillis() + (tickCooldown * 50L));
             }
         }
         toRemove.forEach(controlledCrafts::remove);
@@ -376,11 +377,12 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             lastInput.remove(oldPlayer);
             lastInputTime.remove(oldPlayer);
             sneakTimes.remove(oldPlayer);
+            lastSneakState.remove(oldPlayer);
         }
         playerToCraft.put(p, (PlayerCraft) c);
 
-        String craftName = c.getType().getStringProperty(CraftType.NAME);
-        if (craftName.contains("Fighter") || craftName.contains("Bomber")) {
+        String craftName = c.getType().getStringProperty(CraftType.NAME).toLowerCase();
+        if (craftName.contains("fighter") || craftName.contains("bomber")) {
             float yaw = p.getLocation().getYaw();
             CruiseDirection initialDir = CruiseDirection.NORTH;
             
@@ -403,6 +405,7 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             lastInput.remove(p);
             lastInputTime.remove(p);
             sneakTimes.remove(p);
+            lastSneakState.remove(p);
             residualMovements.remove(c);
             currentVelocity.remove(c);
             currentSpeedFactor.remove(c);
