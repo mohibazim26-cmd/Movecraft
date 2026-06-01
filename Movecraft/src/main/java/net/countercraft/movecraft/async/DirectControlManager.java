@@ -6,6 +6,7 @@ import net.countercraft.movecraft.MovecraftRotation;
 import net.countercraft.movecraft.craft.Craft;
 import net.countercraft.movecraft.craft.PlayerCraft;
 import net.countercraft.movecraft.craft.type.CraftType;
+import net.countercraft.movecraft.events.CraftRotateEvent;
 import net.countercraft.movecraft.events.FuelBurnEvent;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
@@ -91,6 +92,27 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
 
         int gear = clamp(craft.getCurrentGear(), 1, 9);
         event.setFuelBurnRate(event.getFuelBurnRate() * fuelMultiplierForGear(gear));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCraftRotate(CraftRotateEvent event) {
+        Craft craft = event.getCraft();
+        if (!controlledCrafts.containsKey(craft) || !(craft instanceof PlayerCraft)) {
+            return;
+        }
+
+        PlayerCraft playerCraft = (PlayerCraft) craft;
+        if (!playerCraft.getPilotLocked()) {
+            return;
+        }
+
+        if (isCombatAircraft(craft)) {
+            rotateAircraftCruiseDirection(craft, event.getRotation());
+            return;
+        }
+
+        rotateStandardCruiseDirection(craft, event.getRotation());
+        pauseStandardDirectControlMovement(craft, 300L);
     }
 
     @Override
@@ -385,6 +407,9 @@ public class DirectControlManager extends BukkitRunnable implements Listener {
             aircraftResidual.put(craft, new Vector(0, 0, 0));
             aircraftLastImpulse.put(craft, 0L);
         } else {
+            if (playerCraft.getCruising()) {
+                playerCraft.setCruising(false);
+            }
             standardCruising.put(craft, false);
             standardVelocity.put(craft, new Vector(0, 0, 0));
             standardResidual.put(craft, new Vector(0, 0, 0));
