@@ -283,23 +283,11 @@ public final class InteractListener implements Listener {
 
     private void rotateCraftFromControlKey(Player player, PlayerCraft craft, MovecraftRotation rotation) {
         boolean directControl = craft.getPilotLocked();
-        boolean combatAircraftDirectControl = isCombatAircraft(craft) && directControl;
-        if (directControl && !combatAircraftDirectControl) {
-            Movecraft.getInstance().getDirectControlManager().rotateStandardCruiseDirection(craft, rotation);
-            Movecraft.getInstance().getDirectControlManager().pauseStandardDirectControlMovement(craft, 300L);
-        }
-
         craft.rotate(
                 rotation,
                 directControl
                         ? MathUtils.bukkit2MovecraftLoc(player.getLocation())
                         : craft.getHitBox().getMidPoint()
         );
-
-        if (!combatAircraftDirectControl) {
-            return;
-        }
-
-        Movecraft.getInstance().getDirectControlManager().rotateAircraftCruiseDirection(craft, rotation);
     }
 }
