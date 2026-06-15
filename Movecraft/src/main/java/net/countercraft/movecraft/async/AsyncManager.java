@@ -173,18 +173,83 @@ public class AsyncManager extends BukkitRunnable {
                     && craft.getHitBox().getMinY() < w.getSeaLevel())
                 ticksElapsed >>= 1;
             // check direct controls to modify movement
-            boolean bankLeft = false;
-            boolean bankRight = false;
-            boolean dive = false;
-            if (craft instanceof PlayerCraft && ((PlayerCraft) craft).getPilotLocked()) {
-                Player pilot = ((PlayerCraft) craft).getPilot();
-                if (pilot.isSneaking())
+boolean bankLeft = false;
+boolean bankRight = false;
+boolean dive = false;
+boolean climb = false;
+
+if (craft instanceof PlayerCraft && ((PlayerCraft) craft).getPilotLocked()) {
+    PlayerCraft playerCraft = (PlayerCraft) craft;
+    Player pilot = playerCraft.getPilot();
+
+    if (pilot != null) {
+        String inputMode = craft.getType().getStringProperty(CraftType.DIRECT_CONTROL_INPUT_MODE);
+
+        if ("wasd".equalsIgnoreCase(inputMode)) {
+            DirectControlInput input = Movecraft.getInstance()
+                    .getDirectControlInputProvider()
+                    .getInput(pilot, playerCraft);
+
+            boolean aircraft = craft.getType().getBoolProperty(CraftType.IS_AIRCRAFT_VEHICLE);
+
+            if (aircraft) {
+                // Aircraft: cruise direction stays fixed.
+                // WASD only modifies core banking / vertical movement.
+                bankLeft = input.left();
+                bankRight = input.right();
+
+                if (input.forward()) {
                     dive = true;
-                if (pilot.getInventory().getHeldItemSlot() == 3)
-                    bankLeft = true;
-                if (pilot.getInventory().getHeldItemSlot() == 5)
-                    bankRight = true;
+                }
+
+                if (input.backward()) {
+                    climb = true;
+                }
+
+                if (craft.getType().getBoolProperty(CraftType.DIRECT_CONTROL_SNEAK_DIVE) && input.sneak()) {
+                    dive = true;
+                }
+
+                if (craft.getType().getBoolProperty(CraftType.DIRECT_CONTROL_JUMP_CLIMB) && input.jump()) {
+                    climb = true;
+                }
             }
+            else {
+                // Standard vehicles: W/S change core cruise direction.
+                // A/D use core banking, not custom sideways movement.
+                bankLeft = input.left();
+                bankRight = input.right();
+
+                if (input.forward()) {
+                    craft.setCruiseDirection(cardinalDirectionFromYaw(pilot.getLocation().getYaw()));
+                }
+                else if (input.backward()) {
+                    craft.setCruiseDirection(oppositeCardinalDirection(
+                            cardinalDirectionFromYaw(pilot.getLocation().getYaw())
+                    ));
+                }
+
+                if (craft.getType().getBoolProperty(CraftType.DIRECT_CONTROL_SNEAK_DIVE) && input.sneak()) {
+                    dive = true;
+                }
+
+                if (craft.getType().getBoolProperty(CraftType.DIRECT_CONTROL_JUMP_CLIMB) && input.jump()) {
+                    climb = true;
+                }
+            }
+        }
+        else {
+            // APDev vanilla direct control.
+            if (pilot.isSneaking())
+                dive = true;
+            if (pilot.getInventory().getHeldItemSlot() == 3)
+                bankLeft = true;
+            if (pilot.getInventory().getHeldItemSlot() == 5)
+                bankRight = true;
+        }
+    }
+}
+
             int tickCoolDown;
             if (cooldownCache.containsKey(craft)) {
                 tickCoolDown = cooldownCache.get(craft);
@@ -194,25 +259,30 @@ public class AsyncManager extends BukkitRunnable {
                 cooldownCache.put(craft,tickCoolDown);
             }
 
-            // Account for banking and diving in speed calculations by changing the tickCoolDown
-            int cruiseSkipBlocks = (int) craft.getType().getPerWorldProperty(
-                    CraftType.PER_WORLD_CRUISE_SKIP_BLOCKS, w);
-            if (craft.getCruiseDirection() != CruiseDirection.UP
-                    && craft.getCruiseDirection() != CruiseDirection.DOWN) {
-                if (bankLeft || bankRight) {
-                    if (!dive) {
-                        tickCoolDown *= (Math.sqrt(Math.pow(1 + cruiseSkipBlocks, 2)
-                                + Math.pow(cruiseSkipBlocks >> 1, 2)) / (1 + cruiseSkipBlocks));
-                    }
-                    else {
-                        tickCoolDown *= (Math.sqrt(Math.pow(1 + cruiseSkipBlocks, 2)
-                                + Math.pow(cruiseSkipBlocks >> 1, 2) + 1) / (1 + cruiseSkipBlocks));
-                    }
-                }
-                else if (dive) {
-                    tickCoolDown *= (Math.sqrt(Math.pow(1 + cruiseSkipBlocks, 2) + 1) / (1 + cruiseSkipBlocks));
-                }
-            }
+            // Account for banking and vertical movement in speed calculations by changing the tickCoolDown
+int cruiseSkipBlocks = (int) craft.getType().getPerWorldProperty(
+        CraftType.PER_WORLD_CRUISE_SKIP_BLOCKS, w);
+
+boolean verticalMovement = dive || climb;
+
+if (craft.getCruiseDirection() != CruiseDirection.UP
+        && craft.getCruiseDirection() != CruiseDirection.DOWN) {
+    if (bankLeft || bankRight) {
+        if (!verticalMovement) {
+            tickCoolDown *= (Math.sqrt(Math.pow(1 + cruiseSkipBlocks, 2)
+                    + Math.pow(cruiseSkipBlocks >> 1, 2)) / (1 + cruiseSkipBlocks));
+        }
+        else {
+            tickCoolDown *= (Math.sqrt(Math.pow(1 + cruiseSkipBlocks, 2)
+                    + Math.pow(cruiseSkipBlocks >> 1, 2) + 1) / (1 + cruiseSkipBlocks));
+        }
+    }
+    else if (verticalMovement) {
+        tickCoolDown *= (Math.sqrt(Math.pow(1 + cruiseSkipBlocks, 2) + 1) / (1 + cruiseSkipBlocks));
+    }
+}
+
+
 
             if (Math.abs(ticksElapsed) < tickCoolDown)
                 continue;
@@ -238,6 +308,9 @@ public class AsyncManager extends BukkitRunnable {
                 if (craft.getHitBox().getMinY() <= w.getSeaLevel())
                     dy = -1;
             }
+            else if (climb) {
+    dy = (cruiseSkipBlocks + 1) >> 1;
+}
             // ship faces west
             if (craft.getCruiseDirection() == CruiseDirection.WEST) {
                 dx = -1 - cruiseSkipBlocks;
@@ -284,7 +357,38 @@ public class AsyncManager extends BukkitRunnable {
             craft.setLastCruiseUpdate(System.currentTimeMillis());
         }
     }
+private static CruiseDirection cardinalDirectionFromYaw(float yaw) {
+    float normalized = yaw % 360;
+    if (normalized < 0) {
+        normalized += 360;
+    }
 
+    if (normalized >= 45 && normalized < 135) {
+        return CruiseDirection.WEST;
+    }
+    if (normalized >= 135 && normalized < 225) {
+        return CruiseDirection.NORTH;
+    }
+    if (normalized >= 225 && normalized < 315) {
+        return CruiseDirection.EAST;
+    }
+    return CruiseDirection.SOUTH;
+}
+
+private static CruiseDirection oppositeCardinalDirection(CruiseDirection direction) {
+    switch (direction) {
+        case NORTH:
+            return CruiseDirection.SOUTH;
+        case SOUTH:
+            return CruiseDirection.NORTH;
+        case EAST:
+            return CruiseDirection.WEST;
+        case WEST:
+            return CruiseDirection.EAST;
+        default:
+            return direction;
+    }
+}
     //Controls sinking crafts
     private void processSinking() {
         //copy the crafts before iteration to prevent concurrent modifications
