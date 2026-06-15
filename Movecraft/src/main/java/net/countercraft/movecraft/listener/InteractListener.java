@@ -17,6 +17,8 @@
 
 package net.countercraft.movecraft.listener;
 
+import net.countercraft.movecraft.CruiseDirection;
+import net.countercraft.movecraft.Movecraft;
 import net.countercraft.movecraft.config.Settings;
 import net.countercraft.movecraft.craft.CraftManager;
 import net.countercraft.movecraft.craft.PlayerCraft;
@@ -51,25 +53,33 @@ public final class InteractListener implements Listener {
                 if (craft == null)
                     return;
 
-                if (craft.getPilotLocked()) {
-                    // Allow all players to leave direct control mode
-                    craft.setPilotLocked(false);
-                    p.sendMessage(I18nSupport.getInternationalisedString("Direct Control - Leaving"));
-                }
+               if (craft.getPilotLocked()) {
+    // Allow all players to leave direct control mode
+    craft.setPilotLocked(false);
+    Movecraft.getInstance().getDirectControlInputProvider().clear(p);
+    p.sendMessage(I18nSupport.getInternationalisedString("Direct Control - Leaving"));
+}
                 else if (!p.hasPermission(
                         "movecraft." + craft.getType().getStringProperty(CraftType.NAME) + ".move")
                         || !craft.getType().getBoolProperty(CraftType.CAN_DIRECT_CONTROL)) {
                     // Deny players from entering direct control mode
                     p.sendMessage(I18nSupport.getInternationalisedString("Insufficient Permissions"));
                 }
-                else {
-                    // Enter direct control mode
-                    craft.setPilotLocked(true);
-                    craft.setPilotLockedX(p.getLocation().getBlockX() + 0.5);
-                    craft.setPilotLockedY(p.getLocation().getY());
-                    craft.setPilotLockedZ(p.getLocation().getBlockZ() + 0.5);
-                    p.sendMessage(I18nSupport.getInternationalisedString("Direct Control - Entering"));
-                }
+               else {
+    // Enter direct control mode
+    craft.setPilotLocked(true);
+    craft.setPilotLockedX(p.getLocation().getBlockX() + 0.5);
+    craft.setPilotLockedY(p.getLocation().getY());
+    craft.setPilotLockedZ(p.getLocation().getBlockZ() + 0.5);
+
+    if ("wasd".equalsIgnoreCase(craft.getType().getStringProperty(CraftType.DIRECT_CONTROL_INPUT_MODE))) {
+        craft.setCruiseDirection(cardinalDirectionFromYaw(p.getLocation().getYaw()));
+        craft.setCruising(true);
+        Movecraft.getInstance().getDirectControlInputProvider().clear(p);
+    }
+
+    p.sendMessage(I18nSupport.getInternationalisedString("Direct Control - Attivo"));
+}
             }
             else if (e.getAction() == Action.LEFT_CLICK_BLOCK) {
                 // Handle button left clicks
@@ -158,4 +168,21 @@ public final class InteractListener implements Listener {
             craft.setLastCruiseUpdate(System.currentTimeMillis());
         }
     }
+    private static CruiseDirection cardinalDirectionFromYaw(float yaw) {
+    float normalized = yaw % 360;
+    if (normalized < 0) {
+        normalized += 360;
+    }
+
+    if (normalized >= 45 && normalized < 135) {
+        return CruiseDirection.WEST;
+    }
+    if (normalized >= 135 && normalized < 225) {
+        return CruiseDirection.NORTH;
+    }
+    if (normalized >= 225 && normalized < 315) {
+        return CruiseDirection.EAST;
+    }
+    return CruiseDirection.SOUTH;
+ }
 }
