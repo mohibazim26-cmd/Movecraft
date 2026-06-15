@@ -10,7 +10,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
@@ -55,18 +54,7 @@ public final class DirectControlInputProvider implements Listener {
             lastInputTime.put(player.getUniqueId(), System.currentTimeMillis());
         }
 
-        // Lock position but allow head rotation.
-        Vector velocity = player.getVelocity();
-        player.setVelocity(new Vector(velocity.getX(), 0, velocity.getZ()));
-
-        event.setTo(new Location(
-                to.getWorld(),
-                playerCraft.getPilotLockedX(),
-                playerCraft.getPilotLockedY(),
-                playerCraft.getPilotLockedZ(),
-                to.getYaw(),
-                to.getPitch()
-        ));
+     
     }
 
     public DirectControlInput getInput(@NotNull Player player, @NotNull PlayerCraft craft) {
