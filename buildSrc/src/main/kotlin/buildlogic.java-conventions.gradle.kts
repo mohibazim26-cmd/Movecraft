@@ -12,8 +12,15 @@ repositories {
 group = "net.countercraft"
 version = "8.0.0_beta-6"
 
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
 tasks.withType<JavaCompile>() {
     options.encoding = "UTF-8"
+    options.release.set(21)
 }
 
 tasks.withType<Javadoc>() {
