@@ -19,6 +19,7 @@ package net.countercraft.movecraft;
 
 import io.papermc.paper.datapack.Datapack;
 import net.countercraft.movecraft.async.AsyncManager;
+import net.countercraft.movecraft.async.DirectControlInputProvider;
 import net.countercraft.movecraft.commands.*;
 import net.countercraft.movecraft.config.Settings;
 import net.countercraft.movecraft.craft.ChunkManager;
@@ -58,6 +59,7 @@ public class Movecraft extends JavaPlugin {
     private WorldHandler worldHandler;
     private SmoothTeleport smoothTeleport;
     private AsyncManager asyncManager;
+    private DirectControlInputProvider directControlInputProvider;
     private WreckManager wreckManager;
 
     public static synchronized Movecraft getInstance() {
@@ -190,6 +192,9 @@ public class Movecraft extends JavaPlugin {
         asyncManager = new AsyncManager();
         asyncManager.runTaskTimer(this, 0, 1);
         MapUpdateManager.getInstance().runTaskTimer(this, 0, 1);
+        
+        directControlInputProvider = new DirectControlInputProvider();
+        getServer().getPluginManager().registerEvents(directControlInputProvider, this);
 
 
         CraftManager.initialize(datapackInitialized);
@@ -336,6 +341,10 @@ public class Movecraft extends JavaPlugin {
     public AsyncManager getAsyncManager() {
         return asyncManager;
     }
+
+    public @NotNull DirectControlInputProvider getDirectControlInputProvider() {
+    return directControlInputProvider;
+    } 
 
     public @NotNull WreckManager getWreckManager(){
         return wreckManager;
