@@ -152,6 +152,12 @@ final public class CraftType {
         // Private key used as default for PER_WORLD_MAX_HEIGHT_ABOVE_GROUND
     public static final NamespacedKey PER_WORLD_MAX_HEIGHT_ABOVE_GROUND = buildKey("per_world_max_height_above_ground");
     public static final NamespacedKey CAN_DIRECT_CONTROL = buildKey("can_direct_control");
+    public static final NamespacedKey DIRECT_CONTROL_INPUT_MODE = buildKey("direct_control_input_mode");
+    public static final NamespacedKey IS_AIRCRAFT_VEHICLE = buildKey("is_aircraft_vehicle");
+    public static final NamespacedKey DIRECT_CONTROL_INPUT_DEADZONE = buildKey("direct_control_input_deadzone");
+    public static final NamespacedKey DIRECT_CONTROL_INPUT_MEMORY_MS = buildKey("direct_control_input_memory_ms");
+    public static final NamespacedKey DIRECT_CONTROL_SNEAK_DIVE = buildKey("direct_control_sneak_dive");
+    public static final NamespacedKey DIRECT_CONTROL_JUMP_CLIMB = buildKey("direct_control_jump_climb");
     public static final NamespacedKey CAN_HOVER = buildKey("can_hover");
     public static final NamespacedKey CAN_HOVER_OVER_WATER = buildKey("can_hover_over_water");
     public static final NamespacedKey MOVE_ENTITIES = buildKey("move_entities");
@@ -492,6 +498,12 @@ final public class CraftType {
                 }
         ));
         registerProperty(new BooleanProperty("canDirectControl", CAN_DIRECT_CONTROL, type -> true));
+        registerProperty(new StringProperty("directControlInputMode", DIRECT_CONTROL_INPUT_MODE, type -> "vanilla"));
+        registerProperty(new BooleanProperty("isAircraftVehicle", IS_AIRCRAFT_VEHICLE, type -> false));
+        registerProperty(new DoubleProperty("directControlInputDeadzone", DIRECT_CONTROL_INPUT_DEADZONE, type -> 0.05));
+        registerProperty(new IntegerProperty("directControlInputMemoryMs", DIRECT_CONTROL_INPUT_MEMORY_MS, type -> 180));
+        registerProperty(new BooleanProperty("directControlSneakDive", DIRECT_CONTROL_SNEAK_DIVE, type -> true));
+        registerProperty(new BooleanProperty("directControlJumpClimb", DIRECT_CONTROL_JUMP_CLIMB, type -> false));
         registerProperty(new BooleanProperty("canHover", CAN_HOVER, type -> false));
         registerProperty(new BooleanProperty("canHoverOverWater", CAN_HOVER_OVER_WATER, type -> true));
         registerProperty(new BooleanProperty("moveEntities", MOVE_ENTITIES, type -> true));
